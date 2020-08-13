@@ -1,0 +1,591 @@
+#include <stdlib.h>
+#include <dos.h>
+#include <mem.h>
+
+#include "8format.h"
+#include "isadma.h"
+
+// 8 inch drive mechanical control data, times in ms
+const unsigned char cStepRate = 8;
+const unsigned char cHeadLoadTime = 16;
+const unsigned char cHeadUnloadTime = 240;
+const unsigned char cGap3 = 7;
+const unsigned char cGap3Format = 27;
+
+// IRQ fired to acknowledge?
+volatile unsigned char nIRQTriggered = 0;
+
+unsigned char nISRInstalled = 0;
+unsigned char nDriveReady = 0;
+
+// "Current" CHS used for seeking
+unsigned char nCurrentTrack = 0;
+unsigned char nCurrentHead = 0;
+
+// Sector size from bytes to 0-3
+unsigned char ConvertSectorSize(unsigned int nSize)
+{
+  switch(nSize)
+  {
+  case 128:
+  default:
+    return 0;
+  case 256:
+    return 1;
+  case 512:
+    return 2;
+  case 1024:
+    return 3;  
+  }
+}
+
+void interrupt (*oldIrqSix)();
+
+void interrupt newIrqSixISR()
+{
+   _asm {
+      cli
+      mov [nIRQTriggered],1
+      mov al,20h
+      out 20h, al
+      sti
+   }
+}
+
+void InstallISR()
+{
+  if (nISRInstalled != 1)
+  {
+    oldIrqSix = getvect(0x0e);
+    setvect(0x0e, newIrqSixISR);
+
+    nISRInstalled = 1;
+  }
+}
+
+void RemoveISR()
+{
+  if (nISRInstalled == 1)
+  {
+    setvect(0x0e, oldIrqSix);
+  }
+}
+
+unsigned char WaitForIRQ()
+{
+  unsigned int nTimeout = 5000;
+  
+  if (nISRInstalled != 1)
+  {
+    return 0;
+  }
+
+  while(nTimeout != 0)
+  {
+    if (nIRQTriggered == 1)
+    {
+      nIRQTriggered = 0;
+      return 1;
+    }
+    
+    nTimeout--;
+    delay(1);
+  }
+  
+  printf("\nFDC IRQ6 timeout.\nCheck if the disk is in drive and the drive is properly connected.\n");  
+  Quit(EXIT_FAILURE);
+  return 0;
+}
+
+unsigned char FDDGetData()
+{  
+  for(;;)
+  {
+    if((inportb(0x3f4) & 0xC0) == 0xC0)
+    {
+      return inportb(0x3f5);
+    }
+  }
+}
+
+void FDDSendData(unsigned char nData)
+{  
+  for(;;) 
+  {
+    if((inportb(0x3f4) & 0xC0) == 0x80)
+    {
+      outportb(0x3f5, nData);
+      return;
+    }
+  }
+}
+
+void FDDSendCommand(unsigned char nCommand)
+{
+  (nUseFM == 1) ? FDDSendData(nCommand & 0xbf) : FDDSendData(nCommand);
+}
+
+void FDDHeadLoad()
+{
+  // Turn the motor on, select the drive and allow IRQ6 from controller
+  if (nDriveReady != 1)
+  {
+    outportb(0x3f2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
+    delay(250);
+    nDriveReady = 1;
+    
+    // Disable IRQ0 to prevent BIOS from turning the drive motor off automatically
+    {
+      unsigned char nIRQMask = inportb(0x21);
+      outportb(0x21, nIRQMask | 1);
+    }
+  }
+}
+
+void FDDHeadRetract()
+{
+  if (nDriveReady == 1)
+  {
+    // Motor off, drive unselected
+    outportb(0x3f2, (nDriveNumber & 0x03) | 0x0C);
+    nDriveReady = 0;
+    
+    // Enable IRQ0
+    {
+      unsigned char nIRQMask = inportb(0x21);
+      outportb(0x21, nIRQMask & 0xfe);
+    }
+  }
+}
+
+void FDDSeek(unsigned char nTrack, unsigned char nHead)
+{
+  unsigned char nIdx;
+  unsigned char nST0;
+  unsigned char nResultTrack;
+
+  // Three retries
+  for (nIdx = 0; nIdx < 3; nIdx++)
+  {
+    FDDSendCommand(0xf); //0xF Seek
+    FDDSendData((nHead << 2) | nDriveNumber); //Which drive and head
+    FDDSendData(nTrack);
+
+    WaitForIRQ();
+
+    FDDSendCommand(8);
+    nST0 = FDDGetData(); //ST0 status register byte
+    nResultTrack = FDDGetData(); //Current cylinder
+
+    // Seek ended successfully ?
+    if(nST0 & 0x20)
+    {
+      //UC error
+      if(nST0 & 0x10)
+      {
+	    continue;
+      }
+
+      else
+      {
+        // Not on our track
+        if (nResultTrack != nTrack)
+        {
+          continue;
+        }
+
+        else
+        {
+          // Seek success
+          nCurrentTrack = nTrack;
+          nCurrentHead = nHead;
+          return;
+        }
+      }
+    }
+
+    // Seek did not succeed
+    else
+    {
+      continue;
+    }
+  }
+
+  printf("\nFailed seeking to track %u on head %u after 3 attempts.\n",
+	     nTrack, nHead);
+
+  Quit(EXIT_FAILURE);
+}
+
+void FDDCalibrate()
+{
+  unsigned int nIdx;
+  unsigned char nST0;
+  unsigned char nTrack;
+  
+  FDDHeadLoad();
+  
+  // Three retries
+  for (nIdx = 0; nIdx < 3; nIdx++)
+  {
+    FDDSendCommand(7); //0x7 Recalibrate command
+    FDDSendData(nDriveNumber); //Which drive (0 to 3)
+    
+    WaitForIRQ();
+   
+    FDDSendCommand(8);
+    nST0 = FDDGetData(); //ST0 status register byte
+    nTrack = FDDGetData(); //Current track
+
+    // Seek ended successfully ?
+    if(nST0 & 0x20)
+    {
+      //UC error
+      if(nST0 & 0x10)
+      {
+        continue;
+      }
+      
+      else
+      {
+        //Track not 0 after recal
+        if (nTrack > 0) 
+        {
+          continue;
+        }
+        
+        else
+        {
+          //Success
+          return;
+        }            
+      }
+    }
+    
+    // Seek did not succeed for whatever reason
+    else
+    {
+      continue;
+    }
+  }
+  
+  printf("\nFailed drive recalibration after 3 attempts.\n");
+  Quit(EXIT_FAILURE);
+}
+
+void FDDReset()
+{  
+  unsigned char nIdx;
+  
+  InstallISR();
+  
+  // Controller reset
+  outportb(0x3f2, 0);
+  delay(1);
+  outportb(0x3f2, 0x0c); // IRQ allowed, motors off, no drive selected
+  
+  WaitForIRQ();
+  
+  // Check interrupt status 3x
+  for(nIdx = 0; nIdx < 4; nIdx++)
+  {
+    FDDSendCommand(8);
+    FDDGetData(); //ST0, trashed
+    FDDGetData(); //current track, trashed
+  }
+
+  //0x3 fix drive data command
+  FDDSendCommand(3);
+  FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
+  FDDSendData(cHeadLoadTime << 1);
+  
+  if (nDoubleDensity == 1)
+  {
+    // Set 500 kbps data rate for a DD 8" floppy. 3F7h only in AT
+    outportb(0x3f7, 0);
+  }
+  else if (IsPCXT() == 0)
+  {
+    // If single-density 8" floppy, set 250 kbps data rate. But only on an AT and newer, XTs have it default
+    outportb(0x3f7, 2);
+  }
+  
+  FDDCalibrate();
+}
+
+// Formats a whole track on the active (seeked) track and head number
+void FDDFormat()
+{ 
+  unsigned char nIdx;
+  
+  printf("\rHead: %u Track: %u  \r", nCurrentHead, nCurrentTrack);
+
+  // Three retries
+  for (nIdx = 0; nIdx < 3; nIdx++)
+  {
+    unsigned char nIdx2 = 0;
+    unsigned char nErr = 0;
+    
+    unsigned char nST0;
+    unsigned char nST1;
+    unsigned char nST2;
+    
+    // Prepare 4-byte 'CHSV' format buffer for all sectors on track
+    for(nIdx = 0; nIdx < nSectorsPerTrack; nIdx++)
+    {
+      pDMABuffer[nIdx2++] = nCurrentTrack;
+      pDMABuffer[nIdx2++] = nCurrentHead;
+      pDMABuffer[nIdx2++] = nIdx+1; //Sector number (1-based)
+      pDMABuffer[nIdx2++] = ConvertSectorSize(nSectorSize); //Sector size 0 to 3
+    }
+    
+    // Setup DMA
+    PrepareDMABufferForTransfer(0, 4*nSectorsPerTrack);
+   
+    // Now send command    
+    FDDSendCommand(0x4D); //0x4d Format track
+    FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
+    FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
+    FDDSendData(nSectorsPerTrack); //Last sector on track
+    FDDSendData(cGap3Format); //Format GAP3 length
+    FDDSendData(0xf6); //Format fill byte 0xf6
+      
+    WaitForIRQ();
+    
+    // Get status information   
+    nST0 = FDDGetData();
+    nST1 = FDDGetData();
+    nST2 = FDDGetData();
+    
+    // Track, head, sector number and size trashed
+    FDDGetData();
+    FDDGetData();
+    FDDGetData();
+    FDDGetData();
+    
+    // Any errors in the ST0 interrupt code ?
+    if ((nST0 & 0xC0) != 0)
+    {
+      nErr = 1;
+      printf("\n!ST0 0x%x", nST0);
+      
+      // Drive not ready error
+      if ( ((nST0 & 0xC0) == 0xC0) || ((nST0 & 8) == 8) )
+      {
+        printf(" Not Ready");
+      }
+      
+      //UC error
+      if(nST0 & 0x10)
+      {
+	    printf(" Drive Fault");
+      }
+    }
+    
+    //Any errors in the ST1 interrupt code ?
+    if (nST1 > 0)
+    {
+      nErr = 1;
+      printf("\n!ST1 0x%x", nST1);
+      
+      if (nST1 & 0x80)
+      {
+        printf(" Sector count per track exceeded");
+      }
+      if (nST1 & 0x20)
+      {
+        printf(" Error in data");
+      }
+      if (nST1 & 0x10)
+      {
+        printf(" Timeout or data overrun");
+      }
+      if (nST1 & 4)
+      {
+        printf(" No Data (Sector not found)");
+      }
+      if (nST1 & 2)
+      {
+        printf("\nWrite protect error\n");
+        Quit(EXIT_FAILURE);
+      }
+      if (nST1 & 1)
+      {
+        printf(" No address mark");
+      }
+    }
+    
+    //Errors in ST2 interrupt code
+    if (nST2 > 0)
+    {
+      nErr = 1;
+      printf("\n!ST2 0x%x", nST2);
+      
+      if (nST2 & 0x20)
+      {
+        printf(" CRC error in data field");
+      }
+      if (nST2 & 0x10)
+      {
+        printf(" Wrong track in ID address mark");
+      }
+      if (nST2 & 2)
+      {
+        printf(" Bad track or defective media");
+      }
+      if (nST2 & 1)
+      {
+        printf(" No address mark DAM");
+      }    
+    }
+    
+    if (nErr == 0)
+    {
+      // No errors, success
+      return;  
+    }
+    
+    printf("\n");
+  }
+
+  printf("\nFormatting failed after 3 attempts.\n");
+  Quit(EXIT_FAILURE);
+}
+
+// Writes a single sector on the active (seeked) track and head number
+// Input: buffer (max size: 1 sector - either 128B or 1K), length is auto-set
+//        sector number (1-based !)
+void FDDWrite(void* pBuffer, unsigned char nSectorNo)
+{ 
+  unsigned char nIdx;
+  
+  // Three write retries
+  for (nIdx = 0; nIdx < 3; nIdx++)
+  {
+    unsigned char nErr = 0;
+
+    unsigned char nST0;
+    unsigned char nST1;
+    unsigned char nST2;
+    
+    // Clear and prepare the 1k DMA buffer    
+    _fmemset(pDMABuffer, 0, 1024);
+    _fmemcpy(pDMABuffer, pBuffer, nSectorSize);
+
+    // Setup DMA
+    PrepareDMABufferForTransfer(0, nSectorSize);
+   
+    // Now send command    
+    FDDSendCommand(0x45); //0x45 Write sector
+    FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
+    FDDSendData(nCurrentTrack); //currently seeked track and head
+    FDDSendData(nCurrentHead); //lol redundant but needed
+    FDDSendData(nSectorNo); //Which sector to write
+    FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
+    FDDSendData(nSectorNo); //Write only one sector
+    FDDSendData(cGap3); //GAP3 length
+    FDDSendData((nSectorSize == 128) ? (unsigned char)nSectorSize : 0xff); //Data transfer length
+      
+    WaitForIRQ();
+    
+    // Get status information   
+    nST0 = FDDGetData();
+    nST1 = FDDGetData();
+    nST2 = FDDGetData();
+    
+    // Track, head, sector number and size trashed
+    FDDGetData();
+    FDDGetData();
+    FDDGetData();
+    FDDGetData();
+    
+    // Any errors in the ST0 interrupt code ?
+    if ((nST0 & 0xC0) != 0)
+    {
+      nErr = 1;
+      printf("\n!ST0 0x%x", nST0);
+      
+      // Drive not ready error
+      if ( ((nST0 & 0xC0) == 0xC0) || ((nST0 & 8) == 8) )
+      {
+        printf(" Not Ready");
+      }
+      
+      //UC error
+      if(nST0 & 0x10)
+      {
+	    printf(" Drive Fault");
+      }
+    }
+    
+    //Any errors in the ST1 interrupt code ?
+    if (nST1 > 0)
+    {
+      nErr = 1;
+      printf("\n!ST1 0x%x", nST1);
+      
+      if (nST1 & 0x80)
+      {
+        printf(" Sector count per track exceeded");
+      }
+      if (nST1 & 0x20)
+      {
+        printf(" Error in data");
+      }
+      if (nST1 & 0x10)
+      {
+        printf(" Timeout or data overrun");
+      }
+      if (nST1 & 4)
+      {
+        printf(" No Data (Sector not found)");
+      }
+      if (nST1 & 2)
+      {
+        printf("\nWrite protect error\n");
+        Quit(EXIT_FAILURE);
+      }
+      if (nST1 & 1)
+      {
+        printf(" No address mark");
+      }
+    }
+    
+    //Errors in ST2 interrupt code
+    if (nST2 > 0)
+    {
+      nErr = 1;
+      printf("\n!ST2 0x%x", nST2);
+      
+      if (nST2 & 0x20)
+      {
+        printf(" CRC error in data field");
+      }
+      if (nST2 & 0x10)
+      {
+        printf(" Wrong track in ID address mark");
+      }
+      if (nST2 & 2)
+      {
+        printf(" Bad track or defective media");
+      }
+      if (nST2 & 1)
+      {
+        printf(" No address mark DAM");
+      }    
+    }
+    
+    if (nErr == 0)
+    {
+      // No errors, success
+      return;  
+    }
+    
+    printf("\n");
+  }
+
+  printf("\nWrite operation of track %u, head %u, sector %u failed after 3 attempts.\n",
+         nCurrentTrack, nCurrentHead, nSectorNo);
+  Quit(EXIT_FAILURE);
+}
+
