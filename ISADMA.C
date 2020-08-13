@@ -71,7 +71,8 @@ void FreeDMABuffer()
 void PrepareDMABufferForTransfer(unsigned char nToMemory, unsigned int nBytes)
 {
   //nToMemory 1 to read from drive to memory, 0 to write from memory
-  unsigned char nDMAMode = nToMemory ? 0x46 : 0x4a;
+  // TODO Reading from drive to memory not implemented yet: format with verify?
+  unsigned char nDMAMode = nToMemory ? 0x46 : 0x4a; // Without autoinit bit, to support old systems
   nDMATransferLength = nBytes - 1;
   
   outportb(0x0a, 0x06);   //Mask channel 2

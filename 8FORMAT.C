@@ -64,18 +64,18 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-	 "8FORMAT drive: TYPE [/FM] [/N]\n\n"
-	 "where:\n"
-	 " drive: specify where the 77-track 8\" disk drive is installed; A: or B:\n"
-	 "        (on the IBM PC or XT, it can also be connected externally at C: or D:)\n"
-	 " TYPE   specifies media and density. Can be one of the following:\n"
-	 "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
-	 "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
-	 "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12,\n"
-	 "        SSDD: 500K (as in TRS-80 Model 2). 26 spt, 256B sectors. Without FAT.\n"
-     " /FM    (optional): Uses FM encoding instead of the default MFM.\n"
-     " /N     (optional): Format only, don't create filesystem. Ignored with SSDD.\n\n"
-     "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
+         "8FORMAT drive: TYPE [/FM] [/N]\n\n"
+         "where:\n"
+         " drive: specify where the 77-track 8\" disk drive is installed; A: or B:\n"
+         "        (on the IBM PC or XT, it can also be connected externally at C: or D:)\n"
+         " TYPE   specifies media and density. Can be one of the following:\n"
+         "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
+         "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
+         "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12,\n"
+         "        SSDD: 500K (as in TRS-80 Model 2). 26 spt, 256B sectors. Without FAT.\n"
+         " /FM    (optional): Uses FM encoding instead of the default MFM.\n"
+         " /N     (optional): Format only, don't create filesystem. Ignored with SSDD.\n\n"
+         "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
 
   Quit(EXIT_SUCCESS);
 }
@@ -85,6 +85,7 @@ void ParseCommandLine(int argc, char* argv[])
 {
   int indexArgs = 0;
 
+  // Incorrect number of arguments
   if ((argc < 3) || (argc > 5))
   {
     PrintUsage();
@@ -92,13 +93,15 @@ void ParseCommandLine(int argc, char* argv[])
 
   for (indexArgs = 1; indexArgs < argc; indexArgs++)
   {
+    // Case insensitive comparison
     const char* pArgument = strupr(argv[indexArgs]);
 
     if (indexArgs == 1)
     {
+      // Convert drive letter to drive number
       if ((strlen(pArgument) > 2) || ((strlen(pArgument) == 2) && pArgument[1] != ':'))
       {
-	    PrintUsage();
+        PrintUsage();
       }
 
       nDriveNumber = pArgument[0] - 65;
@@ -112,6 +115,7 @@ void ParseCommandLine(int argc, char* argv[])
     
     else if (indexArgs == 2)
     {
+      // Determine density and sides
       if ((strlen(pArgument) != 4) || (pArgument[1] != 'S') || (pArgument[3] != 'D'))
       {
         PrintUsage();
@@ -143,17 +147,20 @@ void ParseCommandLine(int argc, char* argv[])
       continue;
     }
 
+    // Use frequency modulation on FDC
     if (strcmp(pArgument, "/FM") == 0)
     {
       nUseFM = 1;
     }
     
+    // No filesystem    
     if (strcmp(pArgument, "/N") == 0)
     {
       nNoCreateFilesystem = 1;
     }
   }
   
+  // Running on IBM PC/XT with DD media specified - just warn and run
   if ((nDoubleDensity == 1) && (IsPCXT() == 1))
   {
     printf("\nPC or XT detected. 8\" DD floppies are only supported with an HD-capable FDC.\n");

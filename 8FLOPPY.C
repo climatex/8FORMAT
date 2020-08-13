@@ -39,10 +39,12 @@ unsigned char ConvertSectorSize(unsigned int nSize)
   }
 }
 
+// The old IRQ 6 (INT 0E) pointer
 void interrupt (*oldIrqSix)();
 
 void interrupt newIrqSixISR()
 {
+   // Set triggered flag + inform the PIC to re-enable IRQs again 
    _asm {
       cli
       mov [nIRQTriggered],1
@@ -52,6 +54,7 @@ void interrupt newIrqSixISR()
    }
 }
 
+// Install IRQ6 ISR
 void InstallISR()
 {
   if (nISRInstalled != 1)
@@ -71,6 +74,7 @@ void RemoveISR()
   }
 }
 
+// Wait for controller response, with a 5 sec timeout
 unsigned char WaitForIRQ()
 {
   unsigned int nTimeout = 5000;
@@ -101,6 +105,7 @@ unsigned char FDDGetData()
 {  
   for(;;)
   {
+    // Receive byte from FDC only if RQM=1 and direction is FDC->CPU
     if((inportb(0x3f4) & 0xC0) == 0xC0)
     {
       return inportb(0x3f5);
@@ -112,6 +117,7 @@ void FDDSendData(unsigned char nData)
 {  
   for(;;) 
   {
+    // Transmit a byte to FDC only if RQM=1 and direction is CPU->FDC
     if((inportb(0x3f4) & 0xC0) == 0x80)
     {
       outportb(0x3f5, nData);
@@ -122,12 +128,13 @@ void FDDSendData(unsigned char nData)
 
 void FDDSendCommand(unsigned char nCommand)
 {
+  // Use modifier to clear the MFM flag for specifying main commands
   (nUseFM == 1) ? FDDSendData(nCommand & 0xbf) : FDDSendData(nCommand);
 }
 
 void FDDHeadLoad()
 {
-  // Turn the motor on, select the drive and allow IRQ6 from controller
+  // "Motor on" (in 8" drives always on), select the drive and allow IRQ6 from controller
   if (nDriveReady != 1)
   {
     outportb(0x3f2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
@@ -146,7 +153,7 @@ void FDDHeadRetract()
 {
   if (nDriveReady == 1)
   {
-    // Motor off, drive unselected
+    // "Motor off", drive unselected
     outportb(0x3f2, (nDriveNumber & 0x03) | 0x0C);
     nDriveReady = 0;
     
@@ -172,7 +179,8 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
     FDDSendData(nTrack);
 
     WaitForIRQ();
-
+    
+    // 0x8 Sense interrupt command after completion
     FDDSendCommand(8);
     nST0 = FDDGetData(); //ST0 status register byte
     nResultTrack = FDDGetData(); //Current cylinder
@@ -183,7 +191,7 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
       //UC error
       if(nST0 & 0x10)
       {
-	    continue;
+        continue;
       }
 
       else
@@ -233,6 +241,7 @@ void FDDCalibrate()
     
     WaitForIRQ();
    
+    // 0x8 Sense interrupt command after completion
     FDDSendCommand(8);
     nST0 = FDDGetData(); //ST0 status register byte
     nTrack = FDDGetData(); //Current track
@@ -286,7 +295,7 @@ void FDDReset()
   
   WaitForIRQ();
   
-  // Check interrupt status 3x
+  // Check interrupt status 3x (a must, drive is in polling mode)
   for(nIdx = 0; nIdx < 4; nIdx++)
   {
     FDDSendCommand(8);
@@ -294,7 +303,7 @@ void FDDReset()
     FDDGetData(); //current track, trashed
   }
 
-  //0x3 fix drive data command
+  //0x3 Fix drive data command - load new mechanical values
   FDDSendCommand(3);
   FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
   FDDSendData(cHeadLoadTime << 1);
@@ -313,6 +322,89 @@ void FDDReset()
   FDDCalibrate();
 }
 
+unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char nST2)
+{
+  unsigned char nError = 0;
+
+  // Any errors in the ST0 status register?
+  if ((nST0 & 0xC0) != 0)
+  {
+    nError = 1;
+    printf("\n!ST0 0x%x", nST0);
+      
+    // Drive not ready error
+    if ( ((nST0 & 0xC0) == 0xC0) || ((nST0 & 8) == 8) )
+    {
+      printf(" Not Ready");
+    }
+      
+    // UC/equipment error
+    if(nST0 & 0x10)
+    {
+	  printf(" Drive Fault");
+    }
+  }
+    
+  //Any errors in the ST1 status register ?
+  if (nST1 > 0)
+  {
+    nError = 1;
+    printf("\n!ST1 0x%x", nST1);
+      
+    if (nST1 & 0x80)
+    {
+      printf(" Sector count per track exceeded");
+    }
+    if (nST1 & 0x20)
+    {
+      printf(" Error in data");
+    }
+    if (nST1 & 0x10)
+    {
+      printf(" Timeout or data overrun");
+    }
+    if (nST1 & 4)
+    {
+      printf(" No Data (Sector not found)");
+    }
+    if (nST1 & 2)
+    {
+      printf("\nWrite protect error\n");
+      Quit(EXIT_FAILURE); //No point of retrying the command, quit now
+    }
+    if (nST1 & 1)
+    {
+      printf(" No address mark");
+    }
+  }
+    
+  //Errors in ST2 status register
+  if (nST2 > 0)
+  {
+    nError = 1;
+    printf("\n!ST2 0x%x", nST2);
+    
+    if (nST2 & 0x20)
+    {
+      printf(" CRC error in data field");
+    }
+    if (nST2 & 0x10)
+    {
+      printf(" Wrong track in ID address mark");
+    }
+    if (nST2 & 2)
+    {
+      printf(" Bad track or defective media");
+    }
+    if (nST2 & 1)
+    {
+      printf(" No address mark DAM");
+    }    
+  }
+  
+  return nError;
+}
+
 // Formats a whole track on the active (seeked) track and head number
 void FDDFormat()
 { 
@@ -324,13 +416,12 @@ void FDDFormat()
   for (nIdx = 0; nIdx < 3; nIdx++)
   {
     unsigned char nIdx2 = 0;
-    unsigned char nErr = 0;
     
     unsigned char nST0;
     unsigned char nST1;
     unsigned char nST2;
     
-    // Prepare 4-byte 'CHSV' format buffer for all sectors on track
+    // Prepare 4-byte 'CHSN' format buffer for all sectors on track
     for(nIdx = 0; nIdx < nSectorsPerTrack; nIdx++)
     {
       pDMABuffer[nIdx2++] = nCurrentTrack;
@@ -363,88 +454,13 @@ void FDDFormat()
     FDDGetData();
     FDDGetData();
     
-    // Any errors in the ST0 interrupt code ?
-    if ((nST0 & 0xC0) != 0)
-    {
-      nErr = 1;
-      printf("\n!ST0 0x%x", nST0);
-      
-      // Drive not ready error
-      if ( ((nST0 & 0xC0) == 0xC0) || ((nST0 & 8) == 8) )
-      {
-        printf(" Not Ready");
-      }
-      
-      //UC error
-      if(nST0 & 0x10)
-      {
-	    printf(" Drive Fault");
-      }
-    }
-    
-    //Any errors in the ST1 interrupt code ?
-    if (nST1 > 0)
-    {
-      nErr = 1;
-      printf("\n!ST1 0x%x", nST1);
-      
-      if (nST1 & 0x80)
-      {
-        printf(" Sector count per track exceeded");
-      }
-      if (nST1 & 0x20)
-      {
-        printf(" Error in data");
-      }
-      if (nST1 & 0x10)
-      {
-        printf(" Timeout or data overrun");
-      }
-      if (nST1 & 4)
-      {
-        printf(" No Data (Sector not found)");
-      }
-      if (nST1 & 2)
-      {
-        printf("\nWrite protect error\n");
-        Quit(EXIT_FAILURE);
-      }
-      if (nST1 & 1)
-      {
-        printf(" No address mark");
-      }
-    }
-    
-    //Errors in ST2 interrupt code
-    if (nST2 > 0)
-    {
-      nErr = 1;
-      printf("\n!ST2 0x%x", nST2);
-      
-      if (nST2 & 0x20)
-      {
-        printf(" CRC error in data field");
-      }
-      if (nST2 & 0x10)
-      {
-        printf(" Wrong track in ID address mark");
-      }
-      if (nST2 & 2)
-      {
-        printf(" Bad track or defective media");
-      }
-      if (nST2 & 1)
-      {
-        printf(" No address mark DAM");
-      }    
-    }
-    
-    if (nErr == 0)
+    if (DetectErrors(nST0, nST1, nST2) == 0)
     {
       // No errors, success
       return;  
     }
     
+    // Errors detected - next attempt
     printf("\n");
   }
 
@@ -462,8 +478,6 @@ void FDDWrite(void* pBuffer, unsigned char nSectorNo)
   // Three write retries
   for (nIdx = 0; nIdx < 3; nIdx++)
   {
-    unsigned char nErr = 0;
-
     unsigned char nST0;
     unsigned char nST1;
     unsigned char nST2;
@@ -499,88 +513,13 @@ void FDDWrite(void* pBuffer, unsigned char nSectorNo)
     FDDGetData();
     FDDGetData();
     
-    // Any errors in the ST0 interrupt code ?
-    if ((nST0 & 0xC0) != 0)
-    {
-      nErr = 1;
-      printf("\n!ST0 0x%x", nST0);
-      
-      // Drive not ready error
-      if ( ((nST0 & 0xC0) == 0xC0) || ((nST0 & 8) == 8) )
-      {
-        printf(" Not Ready");
-      }
-      
-      //UC error
-      if(nST0 & 0x10)
-      {
-	    printf(" Drive Fault");
-      }
-    }
-    
-    //Any errors in the ST1 interrupt code ?
-    if (nST1 > 0)
-    {
-      nErr = 1;
-      printf("\n!ST1 0x%x", nST1);
-      
-      if (nST1 & 0x80)
-      {
-        printf(" Sector count per track exceeded");
-      }
-      if (nST1 & 0x20)
-      {
-        printf(" Error in data");
-      }
-      if (nST1 & 0x10)
-      {
-        printf(" Timeout or data overrun");
-      }
-      if (nST1 & 4)
-      {
-        printf(" No Data (Sector not found)");
-      }
-      if (nST1 & 2)
-      {
-        printf("\nWrite protect error\n");
-        Quit(EXIT_FAILURE);
-      }
-      if (nST1 & 1)
-      {
-        printf(" No address mark");
-      }
-    }
-    
-    //Errors in ST2 interrupt code
-    if (nST2 > 0)
-    {
-      nErr = 1;
-      printf("\n!ST2 0x%x", nST2);
-      
-      if (nST2 & 0x20)
-      {
-        printf(" CRC error in data field");
-      }
-      if (nST2 & 0x10)
-      {
-        printf(" Wrong track in ID address mark");
-      }
-      if (nST2 & 2)
-      {
-        printf(" Bad track or defective media");
-      }
-      if (nST2 & 1)
-      {
-        printf(" No address mark DAM");
-      }    
-    }
-    
-    if (nErr == 0)
+    if (DetectErrors(nST0, nST1, nST2) == 0)
     {
       // No errors, success
       return;  
     }
     
+    // Errors detected - next attempt
     printf("\n");
   }
 
