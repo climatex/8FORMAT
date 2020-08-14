@@ -181,8 +181,8 @@ void WriteFAT12()
   memset(pDMABuffer, 0, 1024);
   
   // Write FAT12 bootsector
-  PrepareBPB(pDMABuffer);  
-  WriteBootCode(pDMABuffer);
+  PrepareBPB();  
+  WriteBootCode();
   FDDSeek(0, 0);
   FDDWrite(1);
   
