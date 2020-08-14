@@ -9,6 +9,6 @@ void FDDHeadRetract();
 void FDDReset();
 
 void FDDFormat();
-void FDDWrite(void*, unsigned char);
+void FDDWrite(unsigned char);
 
 #endif

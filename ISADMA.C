@@ -1,61 +1,65 @@
 #include <dos.h>
 #include <stdlib.h>
-#include <alloc.h>
 
 #include "isadma.h"
 
-unsigned char far* pDMABuffer = NULL; //Far pointer to the 1K DMA buffer (public)
-unsigned char far* pDMABufferPrivate = NULL; //Our private pointer to an xK DMA buffer
+unsigned char* pDMABuffer = NULL; //Public pointer to the 1K DMA buffer
+unsigned char* pDMABufferPrivate = NULL; //Our private pointer to an xK DMA buffer
 
 unsigned int  nDMATransferLength = 0; // length of transfer in bytes, minus one
 unsigned long nDMAAddress = 0;  //physical address
 
 void InitializeDMABuffer()
 {
-  unsigned long nSize = 0;
+  unsigned int nSize = 0;
+  
+  // For computing physical address in the 16bit segmentation model
+  unsigned long nDataSegment = (unsigned long)_DS << 4;
   
   // Initialize 64K boundary aligned DMA buffer  
   for(;;)
-  {        
-    // We need only 1K
+  {            
+    // We only need 1K
     nSize += 1024;
     
-    // Was the buffer already allocated beforehand? If yes, free it
+    // Was the buffer already allocated beforehand?
     if (pDMABufferPrivate != NULL)
     {
-      farfree(pDMABufferPrivate);
+      free(pDMABufferPrivate);
     }
     
-    // Allocate buffer
-    pDMABufferPrivate = (unsigned char far*)farcalloc(nSize, sizeof(unsigned char));    
+    // Allocate buffer    
+    pDMABufferPrivate = (unsigned char*)malloc(nSize);    
     if (pDMABufferPrivate == NULL)
     {
       printf("\nNot enough memory or 64K-boundary problem\n");
       Quit(EXIT_FAILURE);
     }
     
-    // Form linear address from the segment and offset, BUT only if running on the 1st iteration.
-    if (nDMAAddress == 0)
+    // Compute physical address of the buffer.
+    // Do this only once (the very first iteration), or if the address of the bigger buffer has changed.
+    if (nDMAAddress != nDataSegment + (unsigned int)pDMABufferPrivate)
     {
-      nDMAAddress = ((unsigned long)FP_SEG(pDMABufferPrivate) << 4) + FP_OFF(pDMABufferPrivate);
+      nDMAAddress = nDataSegment + (unsigned int)pDMABufferPrivate;
     }
     
-    // No, it's not the first iteration - we needed to allocate 2K or more, because of the boundary crossing.
+    // It is the 2nd iteration (or greater).
+    // The buffer grows in 1024B increments to overcome the boundary. Only the last 1024B are used.
     else
     {
       nDMAAddress += nSize-1024;
     }
     
-    // Check 64K boundary alignment for the DMA address AND also DMA address after 1K of data. 
+    // Check for 64K boundary crossing of the address alone && address+bufsize (1024B)
     if ((nDMAAddress >> 16) == ((nDMAAddress+1024) >> 16))
     {
-      // All set! Prepare the public 1K DMA memory pointer by translating the new linear address.
-      pDMABuffer = (unsigned char far*)MK_FP((unsigned int)(nDMAAddress >> 4), (unsigned int)(nDMAAddress & 0xf));
-      
-      printf("\nDMA buffer at address: 0x%04lX (0x%04X:0x%04X)\n", nDMAAddress, FP_SEG(pDMABuffer), FP_OFF(pDMABuffer));
-      break;
+      // It doesn't cross - we're all set. Set the public 1K DMA buffer pointer
+      pDMABuffer = (unsigned char*)(nDMAAddress - nDataSegment);
+
+      printf("\nDMA buffer at address: 0x%04lX (0x%04X:0x%04X)\n", nDMAAddress, _DS, (unsigned int)pDMABuffer);
+      break;      
     }
-  }
+  }  
 }
 
 void FreeDMABuffer()
@@ -65,7 +69,7 @@ void FreeDMABuffer()
     return;
   }
   
-  farfree(pDMABufferPrivate);
+  free(pDMABufferPrivate);
 }
 
 void PrepareDMABufferForTransfer(unsigned char nToMemory, unsigned int nBytes)

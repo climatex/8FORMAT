@@ -1,7 +1,7 @@
 #ifndef _ISADMA_H_
 #define _ISADMA_H_
 
-extern unsigned char far* pDMABuffer;
+extern unsigned char* pDMABuffer;
 
 void InitializeDMABuffer();
 void FreeDMABuffer();

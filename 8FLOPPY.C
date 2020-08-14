@@ -220,7 +220,7 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
   }
 
   printf("\nFailed seeking to track %u on head %u after 3 attempts.\n",
-	     nTrack, nHead);
+         nTrack, nHead);
 
   Quit(EXIT_FAILURE);
 }
@@ -341,7 +341,7 @@ unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char
     // UC/equipment error
     if(nST0 & 0x10)
     {
-	  printf(" Drive Fault");
+      printf(" Drive Fault");
     }
   }
     
@@ -411,6 +411,9 @@ void FDDFormat()
   unsigned char nIdx;
   
   printf("\rHead: %u Track: %u  \r", nCurrentHead, nCurrentTrack);
+  
+  // Clear 1K DMA buffer
+  memset(pDMABuffer, 0, 1024);
 
   // Three retries
   for (nIdx = 0; nIdx < 3; nIdx++)
@@ -469,9 +472,9 @@ void FDDFormat()
 }
 
 // Writes a single sector on the active (seeked) track and head number
-// Input: buffer (max size: 1 sector - either 128B or 1K), length is auto-set
+// Input: pre-set DMA buffer (with a max size of 1 sector)
 //        sector number (1-based !)
-void FDDWrite(void* pBuffer, unsigned char nSectorNo)
+void FDDWrite(unsigned char nSectorNo)
 { 
   unsigned char nIdx;
   
@@ -482,10 +485,6 @@ void FDDWrite(void* pBuffer, unsigned char nSectorNo)
     unsigned char nST1;
     unsigned char nST2;
     
-    // Clear and prepare the 1k DMA buffer    
-    _fmemset(pDMABuffer, 0, 1024);
-    _fmemcpy(pDMABuffer, pBuffer, nSectorSize);
-
     // Setup DMA
     PrepareDMABufferForTransfer(0, nSectorSize);
    

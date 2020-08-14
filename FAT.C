@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <mem.h>
 
-#include "fat.h"
+#include "isadma.h"
 #include "8format.h"
 
 // JMP SHORT, nop and the BIOS parameter block. Drive geometry to be modified (5,25" 360K originally)
@@ -62,21 +62,21 @@ const unsigned char sRootDir[3] =
     0xFD, 0xFF, 0xFF
 };
 
-void PrepareBPB(void* pBuffer)
+void PrepareBPB()
 {
   // Initialize pointers to values that need to be redefined
-  unsigned int* pBytesPerSector = (unsigned int*)(&((unsigned char*)pBuffer)[0x0b]);
-  unsigned char* pSectorsPerCluster = (unsigned char*)(&((unsigned char*)pBuffer)[0x0d]);  
-  unsigned int* pReservedSectors = (unsigned int*)(&((unsigned char*)pBuffer)[0x0e]);
-  unsigned int* pRootDirEntries = (unsigned int*)(&((unsigned char*)pBuffer)[0x11]);
-  unsigned int* pTotalSectors = (unsigned int*)(&((unsigned char*)pBuffer)[0x13]);
-  unsigned char* pMediaDescriptor = (unsigned char*)(&((unsigned char*)pBuffer)[0x15]);
-  unsigned int* pSectorsPerFAT = (unsigned int*)(&((unsigned char*)pBuffer)[0x16]);
-  unsigned int* pSectorsPerTrack = (unsigned int*)(&((unsigned char*)pBuffer)[0x18]);
-  unsigned int* pNumberOfHeads = (unsigned int*)(&((unsigned char*)pBuffer)[0x1a]);
+  unsigned int* pBytesPerSector = (unsigned int*)(&(pDMABuffer)[0x0b]);
+  unsigned char* pSectorsPerCluster = (unsigned char*)(&(pDMABuffer)[0x0d]);  
+  unsigned int* pReservedSectors = (unsigned int*)(&(pDMABuffer)[0x0e]);
+  unsigned int* pRootDirEntries = (unsigned int*)(&(pDMABuffer)[0x11]);
+  unsigned int* pTotalSectors = (unsigned int*)(&(pDMABuffer)[0x13]);
+  unsigned char* pMediaDescriptor = (unsigned char*)(&(pDMABuffer)[0x15]);
+  unsigned int* pSectorsPerFAT = (unsigned int*)(&(pDMABuffer)[0x16]);
+  unsigned int* pSectorsPerTrack = (unsigned int*)(&(pDMABuffer)[0x18]);
+  unsigned int* pNumberOfHeads = (unsigned int*)(&(pDMABuffer)[0x1a]);
   
   // Initialize with default values (5,25" 360K) and start defining the 8" geometry
-  memcpy(pBuffer, sBIOSParameterBlock, sizeof(sBIOSParameterBlock));
+  memcpy(pDMABuffer, sBIOSParameterBlock, sizeof(sBIOSParameterBlock));
   
   // Common values for 77-track 8"s
   *pNumberOfHeads = (unsigned int)nHeads; 
@@ -115,11 +115,11 @@ void PrepareBPB(void* pBuffer)
   }
 }
 
-void WriteBootCode(void* pBuffer)
+void WriteBootCode()
 {
   // Write the 128 or 1024-byte rest of the bootsector.  
-  void* pAfterBPB = &((unsigned char*)pBuffer)[0x36];
-  unsigned int* pSignatureBPB = (unsigned int*)(&((unsigned char*)pBuffer)[nSectorSize-2]);
+  void* pAfterBPB = &(pDMABuffer)[0x36];
+  unsigned int* pSignatureBPB = (unsigned int*)(&(pDMABuffer)[nSectorSize-2]);
   
   // 128-byte sectored bytes only contain a message upon bootup
   if (nSectorSize < 512)
@@ -137,7 +137,7 @@ void WriteBootCode(void* pBuffer)
   *pSignatureBPB = 0xaa55;
 }
 
-void WriteRootDir(void* pBuffer)
+void WriteRootDir()
 {
   // Write an empty root directory (6KB) with signature, starting at sector 2  
   unsigned char nSectorIdx = 2;
@@ -145,15 +145,15 @@ void WriteRootDir(void* pBuffer)
   
   while(nBytesWritten != 6*1024)
   {
-    memset(pBuffer, 0, nSectorSize);
+    memset(pDMABuffer, 0, nSectorSize);
     
     // Add signature
     if ((nBytesWritten == 0) || (nBytesWritten == 1024))
     {
-      memcpy(pBuffer, sRootDir, sizeof(sRootDir));
+      memcpy(pDMABuffer, sRootDir, sizeof(sRootDir));
     }
     
-    FDDWrite(pBuffer, nSectorIdx);    
+    FDDWrite(nSectorIdx);    
     nSectorIdx++;
     
     // Need to advance to the next head (or track, if single-sided)
@@ -176,22 +176,16 @@ void WriteRootDir(void* pBuffer)
 }
 
 void WriteFAT12()
-{    
-  void* pBuffer = calloc(nSectorSize, sizeof(unsigned char));
-  if (pBuffer == NULL)
-  {
-    printf("\nNot enough memory to create filesystem.\n");
-    Quit(EXIT_FAILURE);
-  }
+{     
+  // Clear the 1K DMA buffer
+  memset(pDMABuffer, 0, 1024);
   
   // Write FAT12 bootsector
-  PrepareBPB(pBuffer);  
-  WriteBootCode(pBuffer);
+  PrepareBPB(pDMABuffer);  
+  WriteBootCode(pDMABuffer);
   FDDSeek(0, 0);
-  FDDWrite(pBuffer, 1);
+  FDDWrite(1);
   
   // Write an empty root directory
-  WriteRootDir(pBuffer);
-  
-  free(pBuffer);
+  WriteRootDir();
 }
