@@ -177,10 +177,11 @@ void ParseCommandLine(int argc, char* argv[])
   nSectorsPerTrack = (nDoubleDensity == 0) ? 26 : 8;
   nSectorSize = (nDoubleDensity == 0) ? 128 : 1024;
   
-  // TRS-80 SSDD (one side, double density), without FAT12
+  // Special case: TRS-80 Mod. II SSDD-compatible (one side, double density), without FAT12
   if ((nHeads == 1) && (nDoubleDensity == 1))
   {
     nSectorSize = 256;
+    nSectorsPerTrack = 26;
     nNoCreateFilesystem = 1;
   }
 }
