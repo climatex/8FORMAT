@@ -70,12 +70,13 @@ void PrintUsage()
          "        (on the IBM PC or XT, it can also be connected externally at C: or D:)\n"
          " TYPE   specifies media and density. Can be one of the following:\n"
          "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
+         "        SSDD: 500K single sided, double density. 26 spt, 256B sectors, FAT12,\n"
          "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
-         "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12,\n"
-         "        SSDD: 500K (as in TRS-80 Model 2). 26 spt, 256B sectors. Without FAT.\n"
+         "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12.\n"
          " /FM    (optional): Uses FM encoding instead of the default MFM.\n"
-         " /N     (optional): Format only, don't create filesystem. Ignored with SSDD.\n\n"
-         "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
+         " /N     (optional): Format only, don't create boot sector and file system.\n\n"
+         "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n"
+         "The FAT12 filesystem on SSDD media is experimental and may not work properly.\n");
 
   Quit(EXIT_SUCCESS);
 }
@@ -177,12 +178,11 @@ void ParseCommandLine(int argc, char* argv[])
   nSectorsPerTrack = (nDoubleDensity == 0) ? 26 : 8;
   nSectorSize = (nDoubleDensity == 0) ? 128 : 1024;
   
-  // Special case: TRS-80 Mod. II SSDD-compatible (one side, double density), without FAT12
+  // Special case: Experimental SSDD with FAT12 (unless /N specified)
   if ((nHeads == 1) && (nDoubleDensity == 1))
   {
     nSectorSize = 256;
     nSectorsPerTrack = 26;
-    nNoCreateFilesystem = 1;
   }
 }
 
