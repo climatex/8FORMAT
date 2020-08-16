@@ -9,8 +9,6 @@
 const unsigned char cStepRate = 8;
 const unsigned char cHeadLoadTime = 16;
 const unsigned char cHeadUnloadTime = 240;
-const unsigned char cGap3 = 7;
-const unsigned char cGap3Format = 27;
 
 // IRQ fired to acknowledge?
 volatile unsigned char nIRQTriggered = 0;
@@ -36,6 +34,54 @@ unsigned char ConvertSectorSize(unsigned int nSize)
     return 2;
   case 1024:
     return 3;  
+  }
+}
+
+// Provide GAP and Gap3 lengths (per NEC uPD765 datasheet, Table 3)
+unsigned char GetGapLength(unsigned char nFormatting)
+{
+  switch(nSectorSize)
+  {
+  case 128:
+  default:
+    return (nFormatting == 0) ? 7 : 0x1B;
+    
+  case 256:
+  {
+    if (nUseFM == 1)
+    {
+      return (nFormatting == 0) ? 0x0E : 0x2A;
+    }
+    else
+    {
+      return (nFormatting == 0) ? 0x0E : 0x36;
+    }
+  }
+    
+  // currently unused
+  case 512:
+  {
+    if (nUseFM == 1)
+    {
+      return (nFormatting == 0) ? 0x1B : 0x3A;
+    }
+    else
+    {
+      return (nFormatting == 0) ? 0x1B : 0x54;
+    }
+  }
+        
+  case 1024:
+  {
+    if (nUseFM == 1)
+    {
+      return (nFormatting == 0) ? 0x47 : 0x8A;
+    }
+    else
+    {
+      return (nFormatting == 0) ? 0x35 : 0x74;
+    } 
+  }
   }
 }
 
@@ -462,7 +508,7 @@ void FDDFormat()
     FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
     FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
     FDDSendData(nSectorsPerTrack); //Last sector on track
-    FDDSendData(cGap3Format); //Format GAP3 length
+    FDDSendData(GetGapLength(1)); //Format GAP3 length
     FDDSendData(0xf6); //Format fill byte 0xf6
       
     WaitForIRQ();
@@ -517,7 +563,7 @@ void FDDWrite(unsigned char nSectorNo)
     FDDSendData(nSectorNo); //Which sector to write
     FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
     FDDSendData(nSectorNo); //Write only one sector
-    FDDSendData(cGap3); //GAP3 length
+    FDDSendData(GetGapLength(0)); //Gap length
     FDDSendData((nSectorSize == 128) ? (unsigned char)nSectorSize : 0xff); //Data transfer length
       
     WaitForIRQ();
