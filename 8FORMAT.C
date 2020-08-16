@@ -5,6 +5,7 @@
 #include "isadma.h"
 
 // Obtained from the command line later
+unsigned int  nFDCBase = 0x3f0;
 unsigned char nUseFM = 0;
 unsigned char nNoCreateFilesystem = 0;
 unsigned char nDriveNumber = 0;
@@ -64,7 +65,7 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-         "8FORMAT drive: TYPE [/FM] [/N]\n\n"
+         "8FORMAT drive: TYPE [/FM] [/N] [/FDC 0x(base-port)]\n\n"
          "where:\n"
          " drive: specify where the 77-track 8\" disk drive is installed; A: or B:\n"
          "        (on the IBM PC or XT, it can also be connected externally at C: or D:)\n"
@@ -74,7 +75,9 @@ void PrintUsage()
          "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12.\n"
          " /FM    (optional): Uses FM encoding instead of the default MFM.\n"
-         " /N     (optional): Format only, don't create boot sector and file system.\n\n"
+         " /N     (optional): Format only, don't create boot sector and file system.\n"
+         " /FDC   (optional): Use a different floppy controller; base-port is in hex.\n"
+         "                    The default is 0x3f0, the first FDC in the system.\n\n"
          "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n"
          "The FAT12 filesystem on SSDD media is experimental and may not work properly.\n");
 
@@ -87,7 +90,7 @@ void ParseCommandLine(int argc, char* argv[])
   int indexArgs = 0;
 
   // Incorrect number of arguments
-  if ((argc < 3) || (argc > 5))
+  if ((argc < 3) || (argc > 7))
   {
     PrintUsage();
   }
@@ -158,6 +161,29 @@ void ParseCommandLine(int argc, char* argv[])
     if (strcmp(pArgument, "/N") == 0)
     {
       nNoCreateFilesystem = 1;
+    }
+    
+    // Custom floppy drive controller port has been specified
+    if (strcmp(pArgument, "/FDC") == 0)
+    {
+      char* pEndPointer;
+      unsigned long nPort = 0;
+      
+      if (argc <= indexArgs + 1)
+      {
+        PrintUsage();
+      }
+
+      nPort = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      
+      if ((nPort != 0) && (nPort < 0xffff))
+      {
+        nFDCBase = nPort;
+      }
+      else
+      {
+        PrintUsage();
+      }
     }
   }
   

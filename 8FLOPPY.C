@@ -74,10 +74,10 @@ void RemoveISR()
   }
 }
 
-// Wait for controller response, with a 5 sec timeout
+// Wait for controller response, with a 6 sec timeout
 unsigned char WaitForIRQ()
 {
-  unsigned int nTimeout = 5000;
+  unsigned int nTimeout = 6000;
   
   if (nISRInstalled != 1)
   {
@@ -96,34 +96,55 @@ unsigned char WaitForIRQ()
     delay(1);
   }
   
-  printf("\nFDC IRQ6 timeout.\nCheck if the disk is in drive and the drive is properly connected.\n");  
+  printf("\nFloppy drive controller failed to respond in time (IRQ6 timeout).\n"
+         "Check proper connection of the drive, disk presence, and if the FDC works okay.\n");  
   Quit(EXIT_FAILURE);
   return 0;
 }
 
 unsigned char FDDGetData()
 {  
-  for(;;)
+  unsigned int nTimeout = 6000;
+  
+  while(nTimeout != 0)
   {
     // Receive byte from FDC only if RQM=1 and direction is FDC->CPU
-    if((inportb(0x3f4) & 0xC0) == 0xC0)
+    if((inportb(nFDCBase + 4) & 0xC0) == 0xC0)
     {
-      return inportb(0x3f5);
+      return inportb(nFDCBase + 5);
     }
+    
+    nTimeout--;
+    delay(1);
   }
+  
+  printf("\nFailed to get data from the floppy drive controller (RQM / DIO timeout).\n"
+         "Check proper connection of the drive, disk presence, and if the FDC works okay.\n");  
+  Quit(EXIT_FAILURE);
+  
+  return 0;
 }
 
 void FDDSendData(unsigned char nData)
 {  
-  for(;;) 
+  unsigned int nTimeout = 6000;
+  
+  while(nTimeout != 0) 
   {
     // Transmit a byte to FDC only if RQM=1 and direction is CPU->FDC
-    if((inportb(0x3f4) & 0xC0) == 0x80)
+    if((inportb(nFDCBase + 4) & 0xC0) == 0x80)
     {
-      outportb(0x3f5, nData);
+      outportb(nFDCBase + 5, nData);
       return;
     }
+    
+    nTimeout--;
+    delay(1);
   }
+  
+  printf("\nFailed to send data to the floppy drive controller (RQM / DIO timeout).\n"
+         "Check proper connection of the drive, disk presence, and if the FDC works okay.\n");  
+  Quit(EXIT_FAILURE);
 }
 
 void FDDSendCommand(unsigned char nCommand)
@@ -137,7 +158,7 @@ void FDDHeadLoad()
   // "Motor on" (in 8" drives always on), select the drive and allow IRQ6 from controller
   if (nDriveReady != 1)
   {
-    outportb(0x3f2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
+    outportb(nFDCBase + 2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
     delay(250);
     nDriveReady = 1;
     
@@ -154,7 +175,7 @@ void FDDHeadRetract()
   if (nDriveReady == 1)
   {
     // "Motor off", drive unselected
-    outportb(0x3f2, (nDriveNumber & 0x03) | 0x0C);
+    outportb(nFDCBase + 2, (nDriveNumber & 0x03) | 0x0C);
     nDriveReady = 0;
     
     // Enable IRQ0
@@ -289,9 +310,9 @@ void FDDReset()
   InstallISR();
   
   // Controller reset
-  outportb(0x3f2, 0);
+  outportb(nFDCBase + 2, 0);
   delay(1);
-  outportb(0x3f2, 0x0c); // IRQ allowed, motors off, no drive selected
+  outportb(nFDCBase + 2, 0x0c); // IRQ allowed, motors off, no drive selected
   
   WaitForIRQ();
   
@@ -311,12 +332,12 @@ void FDDReset()
   if (nDoubleDensity == 1)
   {
     // Set 500 kbps data rate for a DD 8" floppy. 3F7h only in AT
-    outportb(0x3f7, 0);
+    outportb(nFDCBase + 7, 0);
   }
   else if (IsPCXT() == 0)
   {
     // If single-density 8" floppy, set 250 kbps data rate. But only on an AT and newer, XTs have it default
-    outportb(0x3f7, 2);
+    outportb(nFDCBase + 7, 2);
   }
   
   FDDCalibrate();
