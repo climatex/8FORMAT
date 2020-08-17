@@ -1,7 +1,7 @@
 #ifndef _8FORMAT_H_
 #define _8FORMAT_H_
 
-extern unsigned int nFDCBase;
+extern unsigned int  nFDCBase;
 extern unsigned char nUseFM;
 extern unsigned char nNoCreateFilesystem;
 extern unsigned char nDriveNumber;
@@ -10,6 +10,8 @@ extern unsigned char nHeads;
 extern unsigned char nDoubleDensity;
 extern unsigned int  nSectorSize;
 extern unsigned char nSectorsPerTrack;
+extern unsigned char nCustomGapLength;
+extern unsigned char nCustomGap3Length;
 
 void Quit(int);
 unsigned char IsPCXT();

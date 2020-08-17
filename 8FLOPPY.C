@@ -37,9 +37,22 @@ unsigned char ConvertSectorSize(unsigned int nSize)
   }
 }
 
-// Provide GAP and Gap3 lengths (per NEC uPD765 datasheet, Table 3)
+// Provide GAP and Gap3 lengths
 unsigned char GetGapLength(unsigned char nFormatting)
 {
+  // User-provided gap length for read/write
+  if ((nFormatting == 0) && (nCustomGapLength != 0))
+  {
+    return nCustomGapLength;
+  }
+  
+  // User-provided GAP3 length for track format
+  if ((nFormatting == 1) && (nCustomGap3Length != 0))
+  {
+    return nCustomGap3Length;
+  }
+  
+  // Try to autodetect. (values per NEC uPD765 datasheet, Table 3)  
   switch(nSectorSize)
   {
   case 128:
@@ -58,7 +71,6 @@ unsigned char GetGapLength(unsigned char nFormatting)
     }
   }
     
-  // currently unused
   case 512:
   {
     if (nUseFM == 1)

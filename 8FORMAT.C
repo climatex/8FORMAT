@@ -14,6 +14,8 @@ unsigned char nHeads = 0;
 unsigned char nDoubleDensity = 255;
 unsigned int  nSectorSize = 0;
 unsigned char nSectorsPerTrack = 0;
+unsigned char nCustomGapLength = 0;
+unsigned char nCustomGap3Length = 0;
 
 // Terminate with exit code, do cleanup beforehand
 void Quit(int nStatus)
@@ -65,21 +67,24 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-         "8FORMAT drive: TYPE [/FM] [/N] [/FDC 0x(base-port)]\n\n"
+         "8FORMAT drv: TYPE [/512] [/FM] [/N] [/FDC 0x(port)] /G [0x(len)] /G3 [0x(len)]\n\n"
          "where:\n"
-         " drive: specify where the 77-track 8\" disk drive is installed; A: or B:\n"
+         " drv:   specify drive where the 77-track 8\" disk drive is installed; A: or B:\n"
          "        (on the IBM PC or XT, it can also be connected externally at C: or D:)\n"
-         " TYPE   specifies media and density. Can be one of the following:\n"
+         " TYPE   specifies media geometry and density. Can be one of the following:\n"
          "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        SSDD: 500K single sided, double density. 26 spt, 256B sectors, FAT12,\n"
          "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12.\n"
-         " /FM    (optional): Uses FM encoding instead of the default MFM.\n"
+         " /512   (optional): Force 512B sectors regardless of chosen media or density.\n"
+         " /FM    (optional): Use FM encoding instead of the default MFM for all types.\n"
          " /N     (optional): Format only, don't create boot sector and file system.\n"
          " /FDC   (optional): Use a different floppy controller; base-port is in hex.\n"
-         "                    The default is 0x3f0, the first FDC in the system.\n\n"
+         "                    The default is 0x3f0, the first FDC in the system.\n"
+         " /G,/G3 (optional): Specify custom GAP (write) and Gap3 (format) lengths in hex\n"
+         "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n\n"
          "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n"
-         "The FAT12 filesystem on SSDD media is experimental and may not work properly.\n");
+         "Formatting with /512, or using type SSDD without /N, is experimental.\n");
 
   Quit(EXIT_SUCCESS);
 }
@@ -88,9 +93,10 @@ void PrintUsage()
 void ParseCommandLine(int argc, char* argv[])
 {
   int indexArgs = 0;
+  unsigned char nForce512Sectors = 0;
 
   // Incorrect number of arguments
-  if ((argc < 3) || (argc > 7))
+  if ((argc < 3) || (argc > 12))
   {
     PrintUsage();
   }
@@ -108,6 +114,7 @@ void ParseCommandLine(int argc, char* argv[])
         PrintUsage();
       }
 
+      // Must be A: to D:
       nDriveNumber = pArgument[0] - 65;
       if (nDriveNumber > 3)
       {
@@ -150,6 +157,12 @@ void ParseCommandLine(int argc, char* argv[])
 
       continue;
     }
+    
+    // Force 512-byte sectors on the chosen drive geometry
+    if (strcmp(pArgument, "/512") == 0)
+    {
+      nForce512Sectors = 1;
+    }
 
     // Use frequency modulation on FDC
     if (strcmp(pArgument, "/FM") == 0)
@@ -164,21 +177,46 @@ void ParseCommandLine(int argc, char* argv[])
     }
     
     // Custom floppy drive controller port has been specified
-    if (strcmp(pArgument, "/FDC") == 0)
+    if ((strcmp(pArgument, "/FDC") == 0) && (argc > indexArgs + 1))
     {
       char* pEndPointer;
-      unsigned long nPort = 0;
-      
-      if (argc <= indexArgs + 1)
-      {
-        PrintUsage();
-      }
-
-      nPort = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      unsigned long nPort = strtoul(argv[indexArgs+1], &pEndPointer, 16);
       
       if ((nPort != 0) && (nPort < 0xffff))
       {
-        nFDCBase = nPort;
+        nFDCBase = (unsigned int)nPort;
+      }
+      else
+      {
+        PrintUsage();
+      }
+    }
+    
+    // Custom write gap length has been specified
+    if ((strcmp(pArgument, "/G") == 0) && (argc > indexArgs + 1))
+    {
+      char* pEndPointer;
+      unsigned long nGapLen = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      
+      if ((nGapLen != 0) && (nGapLen <= 0xff))
+      {
+        nCustomGapLength = (unsigned char)nGapLen;
+      }
+      else
+      {
+        PrintUsage();
+      }
+    }
+    
+    // Custom format gap3 length has been specified
+    if ((strcmp(pArgument, "/G3") == 0) && (argc > indexArgs + 1))
+    {
+      char* pEndPointer;
+      unsigned long nGapLen = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      
+      if ((nGapLen != 0) && (nGapLen <= 0xff))
+      {
+        nCustomGap3Length = (unsigned char)nGapLen;
       }
       else
       {
@@ -194,7 +232,8 @@ void ParseCommandLine(int argc, char* argv[])
   }
   
   // Third or fourth floppy drive on a newer machine?
-  if ((nDriveNumber > 1) && (IsPCXT() == 0))
+  // (Do not display this error if a custom floppy FDC port has been specified.)
+  if ((nFDCBase == 0x3F0) && ((nDriveNumber > 1) && (IsPCXT() == 0)))
   {
     printf("\nOnly two floppy drives are supported on this machine.\n");
     Quit(EXIT_FAILURE);
@@ -209,6 +248,12 @@ void ParseCommandLine(int argc, char* argv[])
   {
     nSectorSize = 256;
     nSectorsPerTrack = 26;
+  }
+  
+  // Special case 2: Experimental: use 512 bytes per sector
+  if (nForce512Sectors == 1)
+  {
+    nSectorSize = 512;
   }
 }
 

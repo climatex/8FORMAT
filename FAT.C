@@ -47,7 +47,7 @@ unsigned char s128ByteBootstrapper[458] =
     0x64, 0x20, 0x66, 0x61, 0x69, 0x6C, 0x75, 0x72, 0x65, 0x00
 };
 
-// Regular "512byte"-compatible FAT12 boot code (to be put in a 1024B sector). Searches for IO.SYS/MSDOS.SYS
+// Regular "512byte"-compatible FAT12 boot code (to be put in a 512/1024B sector). Searches for IO.SYS/MSDOS.SYS
 const unsigned char sFAT12BootCode[439] =
 {
     0xFA, 0x33, 0xC0, 0x8E, 0xD0, 0xBC, 0x00, 0x7C, 0x16, 0x07, 0xBB, 0x78, 0x00, 0x36, 0xC5, 0x37, 
@@ -151,19 +151,28 @@ void PrepareBPB()
     *pSectorsPerFAT = 2;
   }
   
+  // EXPERIMENTAL: Force 512B sectors on the given geometry
+  if (nSectorSize == 512)
+  {
+    // Just change the reserved sector count (1 bootsector)
+    // and that there's one 512B sector per FAT cluster, everything else is kept
+    *pSectorsPerCluster = 1;
+    *pReservedSectors = 1;
+  }
+  
   nReservedSectors = *pReservedSectors;
 }
 
 void WriteBootCode()
 {
-  // Write a single 1024-byte bootsector, four 128-byte sectors or two 256-byte sectors.
+  // Write a single 512/1024-byte bootsector, four 128-byte sectors or two 256-byte sectors.
   unsigned char* pAfterBPB = &(pDMABuffer)[0x36];
     
   // Prepare the BIOS parameter block (drive geometry)
   PrepareBPB();
   
-  // < 512-byte-per-sector floppy require a special "bootstrapper"
-  // This is pre-signed with 0xaa55 on the 127th and 255th bytes
+  // 128B or 256B-per-sector floppy require a special "bootstrapper"
+  // This is pre-signed with 0xaa55 on the 127th and 255th bytes, to be able to be booted from.
   if (nSectorSize < 512)
   {
     unsigned char nSectorIdx = 1;
@@ -173,13 +182,13 @@ void WriteBootCode()
     if (nSectorSize == 256)
     {
       // Modify the boot code to load one sector to 7d00h
-      // defaultly: load three sectors to 7c80h
-      s128ByteBootstrapper[33] = 0x01; //was 0x03
-      s128ByteBootstrapper[40] = 0x7D; //was 0x7c
+      // defaultly: load three sectors to 7c80h (3x 128B)
+      s128ByteBootstrapper[33] = 0x01; //was 0x03 (INT 0x13, AH=02 Read Sectors, AL=1 instead of 3)
+      s128ByteBootstrapper[40] = 0x7D; //was 0x7c (Offset to load to: 0x7d00 instead of 0x7c80)
       s128ByteBootstrapper[39] = 0x00; //was 0x80
     }
     
-    // The BIOS only loads one sector CHS 0/0/1... So load 3 more sectors (128B size)
+    // The BIOS only loads one sector CHS 0/0/1 upon boot... So load 3 more sectors (128B size)
     // or 1 more sector (256B size), to get a complete 512B boot routine.
     memcpy(pAfterBPB, s128ByteBootstrapper, nSectorSize-sizeof(sBIOSParameterBlock) /* 54 */);
     
@@ -240,7 +249,7 @@ void WriteRootDir()
 {
   // Write an empty root directory (6KB) with signature 
   
-  // Determine the start of root directory (the first cluster) as a starting sector index
+  // Determine the start of root directory (the first FAT cluster) as a starting sector index
   unsigned char nSectorIdx = (unsigned char)nReservedSectors + 1;
   
   // Bytes per cluster (either 512 or 1024) 
