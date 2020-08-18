@@ -217,7 +217,7 @@ void FDDHeadLoad()
   if (nDriveReady != 1)
   {
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
-    delay(250);
+    delay(500);
     nDriveReady = 1;
     
     // Disable IRQ0 to prevent BIOS from turning the drive motor off automatically
