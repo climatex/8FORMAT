@@ -156,10 +156,10 @@ void PrepareBPB()
   // EXPERIMENTAL: Force 512B sectors on the given geometry
   if (nSectorSize == 512)
   {
-    // Change the reserved sector count (1 bootsector)
+    // There's one 512B sector per FAT cluster
     *pSectorsPerCluster = 1;
     
-    // There's one 512B sector per FAT cluster
+    // Change the reserved sector count (1 bootsector)
     *pReservedSectors = 1;
   }
   
@@ -169,6 +169,7 @@ void PrepareBPB()
   
   nReservedSectors = *pReservedSectors;
   nRootDirEntries = *pRootDirEntries;
+  nSectorsPerFAT = *pSectorsPerFAT;
 }
 
 void WriteBootCode()
