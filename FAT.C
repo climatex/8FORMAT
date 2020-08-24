@@ -83,9 +83,10 @@ const unsigned char sFAT12BootCode[439] =
 // To be used from the BPB, locally
 unsigned int nReservedSectors = 0;
 unsigned int nRootDirEntries = 0;
+unsigned int nSectorsPerFAT = 0;
 
-// Empty root dir
-const unsigned char sRootDir[3] =
+// FAT signature
+const unsigned char sFATSignature[3] =
 {
     0xFD, 0xFF, 0xFF
 };
@@ -254,28 +255,41 @@ void WriteBootCode()
 
 void WriteRootDir()
 { 
-  // Determine the start of root directory (the first FAT cluster) as a starting sector index
+  // Determine the start of the FAT region as a starting sector index
   unsigned char nSectorIdx = (unsigned char)nReservedSectors + 1;
+   
+  unsigned int nFAT; 
+  unsigned int nBytesWritten;
+  unsigned char nHead = 0;
+  unsigned char nTrack = 0;
   
-  // Bytes per cluster (either 512 or 1024) 
-  const unsigned int nBytesPerCluster = (nSectorSize == 1024) ? 1024 : 512;
+  // Write first FAT and second FAT (empty, just with the beginning signature)
+  for (nFAT = 0; nFAT < 2; nFAT++)
+  {
+    nBytesWritten = 0;
     
-  unsigned int nBytesWritten = 0;
+    while(nBytesWritten != nSectorsPerFAT*nSectorSize)
+    {
+      memset(pDMABuffer, 0, nSectorSize);
+    
+      // Add FAT signature on start of FAT
+      if (nBytesWritten == 0)
+      {
+        memcpy(pDMABuffer, sFATSignature, sizeof(sFATSignature));
+      }
+      
+      FDDWrite(nSectorIdx++);    
+      nBytesWritten += nSectorSize;
+    }
+  }
 
-  // Write an empty root directory (size: root dir entries X 32bytes one entry) + signature
+  nBytesWritten = 0;  
+
+  // Now write an empty root directory following the FATs
+  // Root directory size: root dir entries X 32bytes one entry
   while(nBytesWritten != nRootDirEntries*32)
   {
-    static unsigned char nHead = 0;
-    static unsigned char nTrack = 0;
-    
-    memset(pDMABuffer, 0, nSectorSize);
-    
-    // Add signature at the start of each root dir clusters
-    if ((nBytesWritten % nBytesPerCluster) == 0)
-    {
-      memcpy(pDMABuffer, sRootDir, sizeof(sRootDir));
-    }
-    
+    memset(pDMABuffer, 0, nSectorSize);    
     FDDWrite(nSectorIdx++);
     
     // Need to advance to the next head (or track) ?
