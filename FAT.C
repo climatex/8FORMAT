@@ -82,6 +82,7 @@ const unsigned char sFAT12BootCode[439] =
 
 // To be used from the BPB, locally
 unsigned int nReservedSectors = 0;
+unsigned int nRootDirEntries = 0;
 
 // Empty root dir
 const unsigned char sRootDir[3] =
@@ -154,13 +155,19 @@ void PrepareBPB()
   // EXPERIMENTAL: Force 512B sectors on the given geometry
   if (nSectorSize == 512)
   {
-    // Just change the reserved sector count (1 bootsector)
-    // and that there's one 512B sector per FAT cluster, everything else is kept
+    // Change the reserved sector count (1 bootsector)
     *pSectorsPerCluster = 1;
+    
+    // There's one 512B sector per FAT cluster
     *pReservedSectors = 1;
   }
   
+  // For the (experimental) 256 and 512byte sector sizes:
+  // Round up the root dir entries count, to fit the chosen sector size. Adds zero, normally.
+  *pRootDirEntries += (((*pRootDirEntries) * 32) % nSectorSize) / 32;
+  
   nReservedSectors = *pReservedSectors;
+  nRootDirEntries = *pRootDirEntries;
 }
 
 void WriteBootCode()
@@ -246,9 +253,7 @@ void WriteBootCode()
 }
 
 void WriteRootDir()
-{
-  // Write an empty root directory (6KB) with signature 
-  
+{ 
   // Determine the start of root directory (the first FAT cluster) as a starting sector index
   unsigned char nSectorIdx = (unsigned char)nReservedSectors + 1;
   
@@ -256,16 +261,17 @@ void WriteRootDir()
   const unsigned int nBytesPerCluster = (nSectorSize == 1024) ? 1024 : 512;
     
   unsigned int nBytesWritten = 0;
-  
-  while(nBytesWritten != 6*1024)
+
+  // Write an empty root directory (size: root dir entries X 32bytes one entry) + signature
+  while(nBytesWritten != nRootDirEntries*32)
   {
     static unsigned char nHead = 0;
     static unsigned char nTrack = 0;
     
     memset(pDMABuffer, 0, nSectorSize);
     
-    // Add signature at the first and second root dir cluster
-    if ((nBytesWritten == 0) || (nBytesWritten == nBytesPerCluster))
+    // Add signature at the start of each root dir clusters
+    if ((nBytesWritten % nBytesPerCluster) == 0)
     {
       memcpy(pDMABuffer, sRootDir, sizeof(sRootDir));
     }
