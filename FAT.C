@@ -86,9 +86,9 @@ unsigned int nRootDirEntries = 0;
 unsigned int nSectorsPerFAT = 0;
 
 // FAT signature
-const unsigned char sFATSignature[3] =
+unsigned char sFATSignature[3] =
 {
-    0xFD, 0xFF, 0xFF
+    0xFE, 0xFF, 0xFF
 };
 
 void PrepareBPB()
@@ -170,6 +170,9 @@ void PrepareBPB()
   nReservedSectors = *pReservedSectors;
   nRootDirEntries = *pRootDirEntries;
   nSectorsPerFAT = *pSectorsPerFAT;
+  
+  // Change FAT ID to media descriptor from BPB
+  sFATSignature[0] = *pMediaDescriptor;
 }
 
 void WriteBootCode()

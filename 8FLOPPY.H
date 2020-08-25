@@ -7,6 +7,7 @@ void RemoveISR();
 void FDDHeadRetract();
 
 void FDDReset();
+void FDDResetBIOS();
 
 void FDDFormat();
 void FDDWrite(unsigned char);

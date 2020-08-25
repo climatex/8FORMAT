@@ -24,19 +24,8 @@ void Quit(int nStatus)
   FDDHeadRetract();
   FreeDMABuffer();
   
-  // Important: before passing control to DOS, use BIOS to blip all FDDs
-  // to get all the custom format configuration out, and all...
-  _asm {
-    mov cx,4
-   }
-blip:
-  _asm {
-    xor ax,ax
-    mov dx,cx
-    dec dx
-    int 13h
-    loop blip
-  }
+  // Important before passing control to DOS
+  FDDResetBIOS();
   
   exit(nStatus);
 }
@@ -44,14 +33,18 @@ blip:
 // Determine if the machine is an IBM 5150 or XT.
 unsigned char IsPCXT()
 {
-  unsigned char nPcByte = 0;
-  _asm {
-    push ds
-    mov ax,0f000h
-    mov ds,ax
-    mov al,[ds:0fffeh]
-    mov [nPcByte],al
-    pop ds
+  static unsigned char nPcByte = 0;
+  
+  if (nPcByte == 0)
+  {
+    _asm {
+      push ds
+      mov ax,0f000h
+      mov ds,ax
+      mov al,[ds:0fffeh]
+      mov [nPcByte],al
+      pop ds
+    }   
   }
 
   return (nPcByte == 0xff) || (nPcByte == 0xfe) || (nPcByte == 0xfb);
@@ -231,18 +224,24 @@ void ParseCommandLine(int argc, char* argv[])
     }
   }
   
-  // Running on IBM PC/XT with DD media specified - just warn and run
-  if ((nDoubleDensity == 1) && (IsPCXT() == 1))
-  {
-    printf("\nPC or XT detected. 8\" DD floppies are only supported with an HD-capable FDC.\n");
-  }
-  
   // Third or fourth floppy drive on a newer machine?
   // (Do not display this error if a custom floppy FDC port has been specified.)
   if ((nFDCBase == 0x3F0) && ((nDriveNumber > 1) && (IsPCXT() == 0)))
   {
     printf("\nOnly two floppy drives are supported on this machine.\n");
     Quit(EXIT_FAILURE);
+  }
+  
+  // Running on IBM PC/XT with DD media specified - just warn and run
+  if ((nDoubleDensity == 1) && (IsPCXT() == 1))
+  {
+    printf("\nPC or XT detected. 8\" DD floppies are only supported with an HD-capable FDC.\n");
+  }
+  
+  // Double density format using FM ?
+  if ((nDoubleDensity == 1) && (nUseFM == 1))
+  {
+    printf("\nAttempting to use FM encoding in a double density mode.\n");
   }
   
   // Construct sector size and sectors per track information
@@ -260,6 +259,12 @@ void ParseCommandLine(int argc, char* argv[])
   if (nForce512Sectors == 1)
   {
     nSectorSize = 512;
+    
+    // Show warning message if we are in single density mode (250kbit/s)
+    if (nDoubleDensity == 0)
+    {
+      printf("\nAttempting to format 512 byte sectors in a single density mode.\n");
+    }
   }
 }
 

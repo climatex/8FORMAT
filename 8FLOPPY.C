@@ -20,6 +20,9 @@ unsigned char nDriveReady = 0;
 unsigned char nCurrentTrack = 0;
 unsigned char nCurrentHead = 0;
 
+// 8" floppy parameters have not yet been specified to the FDC
+unsigned char nNeedsReset = 0;
+
 // Sector size from bytes to 0-3
 unsigned char ConvertSectorSize(unsigned int nSize)
 {
@@ -361,6 +364,35 @@ void FDDCalibrate()
   Quit(EXIT_FAILURE);
 }
 
+// Called upon application exit
+void FDDResetBIOS()
+{
+  // Use BIOS INT13h to recalibrate the FDC before passing control to the OS.
+  // This is important, as it loads BIOS defaults (from INT 1Eh) into the FDC.
+  if (nNeedsReset != 1)
+  {
+    return;
+  }
+  
+  // If the previous operation failed, assume the FDC seized up dead!
+  outportb(nFDCBase + 2, 0); // Hard reset of the controller
+  delay(1);
+  outportb(nFDCBase + 2, 0x0c);
+    
+  // Now use BIOS to recalibrate and load defaults to all drives (3 to 0)
+  _asm {
+    mov cx,4
+  }
+blip:
+  _asm {
+    xor ax,ax
+    mov dx,cx
+    dec dx
+    int 13h
+    loop blip
+  }
+}
+
 void FDDReset()
 {  
   unsigned char nIdx;
@@ -383,6 +415,7 @@ void FDDReset()
   }
 
   //0x3 Fix drive data command - load new mechanical values
+  nNeedsReset = 1;
   FDDSendCommand(3);
   FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
   FDDSendData(cHeadLoadTime << 1);
