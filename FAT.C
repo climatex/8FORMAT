@@ -85,6 +85,10 @@ unsigned int nReservedSectors = 0;
 unsigned int nRootDirEntries = 0;
 unsigned int nSectorsPerFAT = 0;
 
+// Total disk capacity and free space
+unsigned long nTotalDiskCapacity = 0;
+unsigned long nTotalDiskSpace = 0;
+
 // FAT signature
 unsigned char sFATSignature[3] =
 {
@@ -170,6 +174,7 @@ void PrepareBPB()
   nReservedSectors = *pReservedSectors;
   nRootDirEntries = *pRootDirEntries;
   nSectorsPerFAT = *pSectorsPerFAT;
+  nTotalDiskCapacity = (unsigned long)(*pTotalSectors) * nSectorSize;
   
   // Change FAT ID to media descriptor from BPB
   sFATSignature[0] = *pMediaDescriptor;
@@ -264,6 +269,7 @@ void WriteRootDir()
    
   unsigned int nFAT; 
   unsigned int nBytesWritten;
+  unsigned long nTotalWritten = (unsigned long)nReservedSectors * nSectorSize;
   unsigned char nHead = 0;
   unsigned char nTrack = 0;
   
@@ -282,8 +288,10 @@ void WriteRootDir()
         memcpy(pDMABuffer, sFATSignature, sizeof(sFATSignature));
       }
       
-      FDDWrite(nSectorIdx++);    
+      FDDWrite(nSectorIdx++);
+
       nBytesWritten += nSectorSize;
+      nTotalWritten += nSectorSize;
     }
   }
 
@@ -314,7 +322,17 @@ void WriteRootDir()
     }
     
     nBytesWritten += nSectorSize;
+    nTotalWritten += nSectorSize;
   }
+  
+  // Compute free disk space (total capacity minus bootsector(s), FATs and root dir)
+  nTotalDiskSpace = nTotalDiskCapacity - nTotalWritten;
+}
+
+void DisplayDiskInformation()
+{
+  printf("\n   %7lu bytes total disk capacity,\n   %7lu bytes usable space.\n\n",
+         nTotalDiskCapacity, nTotalDiskSpace);
 }
 
 void WriteFAT12()
@@ -327,4 +345,7 @@ void WriteFAT12()
 
   // Write an empty root directory
   WriteRootDir();
+  
+  // Inform about free space
+  DisplayDiskInformation();
 }
