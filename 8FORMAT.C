@@ -24,12 +24,18 @@ void Quit(int nStatus)
   FDDHeadRetract();
   FreeDMABuffer();
   
-  // Important: before passing control to DOS, use BIOS to blip the FDC
+  // Important: before passing control to DOS, use BIOS to blip all FDDs
   // to get all the custom format configuration out, and all...
   _asm {
+    mov cx,4
+   }
+blip:
+  _asm {
     xor ax,ax
-    xor dx,dx
+    mov dx,cx
+    dec dx
     int 13h
+    loop blip
   }
   
   exit(nStatus);
