@@ -7,6 +7,7 @@
 // Obtained from the command line later
 unsigned int  nFDCBase = 0x3f0;
 unsigned char nUseFM = 0;
+unsigned char nQuickFormat = 0;
 unsigned char nNoCreateFilesystem = 0;
 unsigned char nDriveNumber = 0;
 unsigned char nTracks = 77;
@@ -66,10 +67,9 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-         "8FORMAT drv: TYPE [/512] [/FM] [/N] [/FDC 0x(port)] /G [0x(len)] /G3 [0x(len)]\n\n"
+         "8FORMAT drv: TYPE [/512] [/FM] [/N] [/Q] [/FDC (port)] [/G (len)] [/G3 (len)]\n\n"
          "where:\n"
-         " drv:   specify letter where the 77-track 8\" disk drive is installed; A: or B:\n"
-         "        (on the IBM PC or XT, it can also be connected externally at C: or D:)\n"
+         " drv:   specify letter where the 77-track 8\" disk drive is installed,\n"
          " TYPE   specifies media geometry and density. Can be one of the following:\n"
          "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        SSDD: 500K single sided, double density, 26 spt, 256B sectors, FAT12,\n"
@@ -77,7 +77,8 @@ void PrintUsage()
          "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12.\n"
          " /512   (optional): Force 512B sectors regardless of chosen media or density.\n"
          " /FM    (optional): Use FM encoding instead of the default MFM for all types.\n"
-         " /N     (optional): Format only, don't create boot sector and file system.\n"
+         " /N     (optional): Format only, do not create boot sector and file system.\n"
+         " /Q     (optional): Do not format, only create boot sector and file system.\n"
          " /FDC   (optional): Use a different floppy controller; base-port is in hex.\n"
          "                    The default is 0x3f0, the first FDC in the system.\n"
          " /G,/G3 (optional): Specify custom GAP (write) and Gap3 (format) lengths in hex\n"
@@ -169,6 +170,12 @@ void ParseCommandLine(int argc, char* argv[])
       nUseFM = 1;
     }
     
+    // Quick format (create FAT12 only)
+    if (strcmp(pArgument, "/Q") == 0)
+    {
+      nQuickFormat = 1;
+    }
+    
     // No filesystem    
     if (strcmp(pArgument, "/N") == 0)
     {
@@ -224,6 +231,12 @@ void ParseCommandLine(int argc, char* argv[])
     }
   }
   
+  // Both quick format and no filesystem options specified?
+  if ((nQuickFormat == 1) && (nNoCreateFilesystem == 1))
+  {
+    PrintUsage();
+  }
+  
   // Third or fourth floppy drive on a newer machine?
   // (Do not display this error if a custom floppy FDC port has been specified.)
   if ((nFDCBase == 0x3F0) && ((nDriveNumber > 1) && (IsPCXT() == 0)))
@@ -275,12 +288,16 @@ void DoOperations()
   
   // Prepare FDC and drive
   FDDReset();
+  
+  printf("\n");
 
   // Format 77 tracks
-  printf("\nFormatting...\n");  
+  if (nQuickFormat == 0)
   {
     unsigned char nTrackIndex = 0;
     unsigned char nHeadIndex = 0;
+    
+    printf("Formatting...\n");
     
     for (; nTrackIndex < nTracks; nTrackIndex++)
     {    
@@ -294,7 +311,7 @@ void DoOperations()
       nHeadIndex = 0;
     }
   }
-  
+
   DelLine();
 
   // Write FAT12
