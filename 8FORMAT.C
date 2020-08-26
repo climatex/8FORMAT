@@ -48,7 +48,7 @@ unsigned char IsPCXT()
     }   
   }
 
-  return (nPcByte == 0xff) || (nPcByte == 0xfe) || (nPcByte == 0xfb);
+  return (nPcByte > 0xfc) || (nPcByte == 0xfb);
 }
 
 // Redraw line
@@ -82,9 +82,14 @@ void PrintUsage()
          " /FDC   (optional): Use a different floppy controller; base-port is in hex.\n"
          "                    The default is 0x3f0, the first FDC in the system.\n"
          " /G,/G3 (optional): Specify custom GAP (write) and Gap3 (format) lengths in hex\n"
-         "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n\n"
-         "Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n"
-         "Formatting with /512, or using type SSDD without /N, is experimental.\n");
+         "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n\n");
+
+  if (IsPCXT() == 1)
+  {
+    printf("Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
+  }
+         
+  printf("Formatting with /512, or using type SSDD without /N, is experimental.\n");
 
   Quit(EXIT_SUCCESS);
 }
