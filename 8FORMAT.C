@@ -281,15 +281,42 @@ void ParseCommandLine(int argc, char* argv[])
   }
 }
 
+void AskToContinue()
+{
+  unsigned char nScanCode = 0;
+  
+  printf("\nInsert a disk into drive %c: and press ENTER to continue; ESC to quit...",
+         nDriveNumber + 65);
+         
+  while (nScanCode != 0x1C)
+  {
+    _asm {
+      xor ax,ax
+      int 16h
+      mov nScanCode,ah
+    }
+    
+    // ESC
+    if (nScanCode == 1)
+    {
+      printf(" ESC\n");
+      Quit(EXIT_SUCCESS);
+    }
+  }
+  
+  DelLine();
+}
+
 void DoOperations()
 {  
   // Allocate buffer for DMA transfers
   InitializeDMABuffer();
   
+  // Ask to put the disk into drive
+  AskToContinue();
+  
   // Prepare FDC and drive
   FDDReset();
-  
-  printf("\n");
 
   // Format 77 tracks
   if (nQuickFormat == 0)
