@@ -3,6 +3,8 @@
 
 extern unsigned int  nFDCBase;
 extern unsigned char nUseFM;
+extern unsigned char nQuickFormat;
+extern unsigned char nForceSingleSided;
 extern unsigned char nNoCreateFilesystem;
 extern unsigned char nDriveNumber;
 extern unsigned char nTracks;

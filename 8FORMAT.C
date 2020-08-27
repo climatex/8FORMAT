@@ -8,6 +8,7 @@
 unsigned int  nFDCBase = 0x3f0;
 unsigned char nUseFM = 0;
 unsigned char nQuickFormat = 0;
+unsigned char nForceSingleSided = 0;
 unsigned char nNoCreateFilesystem = 0;
 unsigned char nDriveNumber = 0;
 unsigned char nTracks = 77;
@@ -67,21 +68,21 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-         "8FORMAT drv: TYPE [/512] [/FM] [/N] [/Q] [/FDC (port)] [/G (len)] [/G3 (len)]\n\n"
+         "8FORMAT drive: TYPE [/1] [/512] [/FM] [/N] [/Q] [/FDC port] [/G len] [/G3 len]\n\n"
          "where:\n"
-         " drv:   specify letter where the 77-track 8\" disk drive is installed,\n"
+         " drive: specify letter where the 77-track 8\" disk drive is installed,\n"
          " TYPE   specifies media geometry and density. Can be one of the following:\n"
          "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        SSDD: 500K single sided, double density, 26 spt, 256B sectors, FAT12,\n"
          "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12.\n"
+         " /1     (optional): Force single side format with TYPE DSDD to get 616K SSDD.\n" 
          " /512   (optional): Force 512B sectors regardless of chosen media or density.\n"
          " /FM    (optional): Use FM encoding instead of the default MFM for all types.\n"
          " /N     (optional): Format only, do not create boot sector and file system.\n"
          " /Q     (optional): Do not format, only create boot sector and file system.\n"
-         " /FDC   (optional): Use a different floppy controller; base-port is in hex.\n"
-         "                    The default is 0x3f0, the first FDC in the system.\n"
-         " /G,/G3 (optional): Specify custom GAP (write) and Gap3 (format) lengths in hex\n"
+         " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
+         " /G,/G3 (optional): Set custom GAP (write) or Gap3 (format) lengths, in hex.\n"
          "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n\n");
 
   if (IsPCXT() == 1)
@@ -89,7 +90,7 @@ void PrintUsage()
     printf("Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
   }
          
-  printf("Formatting with /512, or using type SSDD without /N, is experimental.\n");
+  printf("Formatting with /512, or using type SSDD (500K) without /N, is experimental.\n");
 
   Quit(EXIT_SUCCESS);
 }
@@ -161,6 +162,12 @@ void ParseCommandLine(int argc, char* argv[])
       }
 
       continue;
+    }
+    
+    // Force single-sided operation
+    if (strcmp(pArgument, "/1") == 0)
+    {
+      nForceSingleSided = 1;
     }
     
     // Force 512-byte sectors on the chosen drive geometry
@@ -266,7 +273,7 @@ void ParseCommandLine(int argc, char* argv[])
   nSectorsPerTrack = (nDoubleDensity == 0) ? 26 : 8;
   nSectorSize = (nDoubleDensity == 0) ? 128 : 1024;
   
-  // Special case: Experimental SSDD with FAT12 (unless /N specified)
+  // Special case: Experimental 500K SSDD with FAT12 (unless /N specified)
   if ((nHeads == 1) && (nDoubleDensity == 1))
   {
     nSectorSize = 256;
@@ -326,6 +333,8 @@ void DoOperations()
   // Format 77 tracks
   if (nQuickFormat == 0)
   {
+    const unsigned char nHeadCount = (nForceSingleSided == 1) ? 1 : nHeads;
+    
     unsigned char nTrackIndex = 0;
     unsigned char nHeadIndex = 0;
     
@@ -333,7 +342,7 @@ void DoOperations()
     
     for (; nTrackIndex < nTracks; nTrackIndex++)
     {    
-      while (nHeadIndex != nHeads)
+      while (nHeadIndex != nHeadCount)
       {
         FDDSeek(nTrackIndex, nHeadIndex);
         FDDFormat();

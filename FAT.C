@@ -112,13 +112,13 @@ void PrepareBPB()
   memcpy(pDMABuffer, sBIOSParameterBlock, sizeof(sBIOSParameterBlock));
   
   // Common values for 77-track 8"s
-  *pNumberOfHeads = (unsigned int)nHeads; 
+  *pNumberOfHeads = (unsigned int)((nForceSingleSided == 1) ? 1 : nHeads); 
   *pSectorsPerTrack = (unsigned int)nSectorsPerTrack;
   *pBytesPerSector = nSectorSize;
-  *pTotalSectors = (unsigned int)nSectorsPerTrack * (unsigned int)nHeads * (unsigned int)nTracks;
+  *pTotalSectors = (unsigned int)nSectorsPerTrack * (*pNumberOfHeads) * (unsigned int)nTracks;
   
-  // Single sided, single density
-  if ((nHeads == 1) && (nDoubleDensity == 0))
+  // 250K Single sided, single density (TYPE SSSD or DSSD with /1)
+  if (((nHeads == 1) || (nForceSingleSided == 1)) && (nDoubleDensity == 0))
   {
     *pSectorsPerCluster = 4;
     *pReservedSectors = 4;
@@ -127,7 +127,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 6;
   }
   
-  // EXPERIMENTAL: Single sided, double density
+  // EXPERIMENTAL: 500K Single sided, double density (TYPE SSDD)
   else if ((nHeads == 1) && (nDoubleDensity == 1))
   {
     *pSectorsPerCluster = 2;
@@ -137,7 +137,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 4;
   }
   
-  // Double sided, single density
+  // 500K Double sided, single density (TYPE DSSD)
   else if ((nHeads == 2) && (nDoubleDensity == 0))
   {
     *pSectorsPerCluster = 4;
@@ -147,7 +147,8 @@ void PrepareBPB()
     *pSectorsPerFAT = 6;
   }
   
-  // Double sided, double density
+  // 1.2M Double sided, double density (TYPE DSDD), or also
+  // 616K Single sided, double density (TYPE DSDD with /1)
   else
   {
     *pSectorsPerCluster = 1;
@@ -171,6 +172,7 @@ void PrepareBPB()
   // Round up the root dir entries count, to fit the chosen sector size. Adds zero, normally.
   *pRootDirEntries += (((*pRootDirEntries) * 32) % nSectorSize) / 32;
   
+  nHeads = (unsigned char)(*pNumberOfHeads);
   nReservedSectors = *pReservedSectors;
   nRootDirEntries = *pRootDirEntries;
   nSectorsPerFAT = *pSectorsPerFAT;
@@ -331,8 +333,8 @@ void WriteRootDir()
 
 void DisplayDiskInformation()
 {
-  printf("\n   %7lu bytes total disk capacity,\n   %7lu bytes usable space.\n\n",
-         nTotalDiskCapacity, nTotalDiskSpace);
+  printf("\n   %7lu bytes (%luK) total disk capacity,\n   %7lu bytes (%luK) usable space.\n\n",
+         nTotalDiskCapacity, nTotalDiskCapacity / 1024, nTotalDiskSpace, nTotalDiskSpace / 1024);
 }
 
 void WriteFAT12()
