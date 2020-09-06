@@ -14,6 +14,7 @@ extern unsigned int  nSectorSize;
 extern unsigned char nSectorsPerTrack;
 extern unsigned char nCustomGapLength;
 extern unsigned char nCustomGap3Length;
+extern unsigned char nOnlyReprogramBIOS;
 
 void Quit(int);
 unsigned char IsPCXT();

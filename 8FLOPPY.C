@@ -138,7 +138,7 @@ void RemoveISR()
 // Wait for controller response, with a 6 sec timeout
 unsigned char WaitForIRQ()
 {
-  unsigned int nTimeout = 6000;
+  unsigned int nTimeout = 60;
   
   if (nISRInstalled != 1)
   {
@@ -154,7 +154,7 @@ unsigned char WaitForIRQ()
     }
     
     nTimeout--;
-    delay(1);
+    delay(100);
   }
   
   printf("\nFloppy drive controller failed to respond in time (IRQ6 timeout).\n"
@@ -165,7 +165,7 @@ unsigned char WaitForIRQ()
 
 unsigned char FDDGetData()
 {  
-  unsigned int nTimeout = 6000;
+  unsigned int nTimeout = 60;
   
   while(nTimeout != 0)
   {
@@ -176,7 +176,7 @@ unsigned char FDDGetData()
     }
     
     nTimeout--;
-    delay(1);
+    delay(100);
   }
   
   printf("\nFailed to get data from the floppy drive controller (RQM / DIO timeout).\n"
@@ -188,7 +188,7 @@ unsigned char FDDGetData()
 
 void FDDSendData(unsigned char nData)
 {  
-  unsigned int nTimeout = 6000;
+  unsigned int nTimeout = 60;
   
   while(nTimeout != 0) 
   {
@@ -200,7 +200,7 @@ void FDDSendData(unsigned char nData)
     }
     
     nTimeout--;
-    delay(1);
+    delay(100);
   }
   
   printf("\nFailed to send data to the floppy drive controller (RQM / DIO timeout).\n"
@@ -376,7 +376,7 @@ void FDDResetBIOS()
   
   // If the previous operation failed, assume the FDC seized up dead!
   outportb(nFDCBase + 2, 0); // Hard reset of the controller
-  delay(1);
+  delay(100);
   outportb(nFDCBase + 2, 0x0c);
     
   // Now use BIOS to recalibrate and load defaults to all drives (3 to 0)
@@ -401,8 +401,9 @@ void FDDReset()
   
   // Controller reset
   outportb(nFDCBase + 2, 0);
-  delay(1);
+  delay(100);
   outportb(nFDCBase + 2, 0x0c); // IRQ allowed, motors off, no drive selected
+  delay(100);
   
   WaitForIRQ();
   
@@ -639,3 +640,48 @@ void FDDWrite(unsigned char nSectorNo)
   Quit(EXIT_FAILURE);
 }
 
+// Updates the INT 1Eh BIOS diskette parameter table to match the new geometry.
+// Required for DOS that relies on BIOS INT 13h disk services.
+void FDDWriteINT1Eh()
+{
+  // Get pointer to the table first
+  unsigned int far* pTableSegment = (unsigned int far*)MK_FP(0, 0x7A);
+  unsigned int far* pTableOffset = (unsigned int far*)MK_FP(0, 0x78);
+  
+  // Get data from table
+  unsigned char far* pSectorSize = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+3);
+  unsigned char far* pEOT = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+4);
+  unsigned char far* pGapLength = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+5);
+  unsigned char far* pDTL = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+6);
+  unsigned char far* pGap3Length = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+7);
+  
+  printf("BIOS INT 1Eh global diskette parameters table for all drives:\n");
+  
+  // Update sector size (0 to 3)
+  printf("Sector size byte:    was %u", *pSectorSize);
+  *pSectorSize = ConvertSectorSize(nSectorSize);
+  printf(", now %u (%u bytes per sector)\n", *pSectorSize, nSectorSize);
+  
+  // Update sectors per track  
+  printf("EOT (sectors/track): was %u", *pEOT);  
+  *pEOT = nSectorsPerTrack;
+  printf(", now %u\n", *pEOT);
+  
+  // Read/write gap length
+  printf("R/W gap length:      was 0x%02X", *pGapLength);
+  *pGapLength = GetGapLength(0); //RW gap length
+  printf(", now 0x%02X\n", *pGapLength);
+  
+  // Data transfer length
+  printf("DTL (transfer len):  was 0x%02X", *pDTL);  
+  *pDTL = (nSectorSize == 128) ? 0x80 : 0xff;
+  printf(", now 0x%02X\n", *pDTL);
+  
+  // Format gap3 length
+  printf("Format gap length:   was 0x%02X", *pGap3Length);  
+  *pGap3Length = GetGapLength(1);
+  printf(", now 0x%02X\n", *pGap3Length);
+  
+  nNeedsReset = 1;  
+  printf("\nGlobal diskette parameters table updated successfully.\n");
+}

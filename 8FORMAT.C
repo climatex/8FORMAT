@@ -1,7 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
+#include <dos.h>
 
 #include "8format.h"
+#include "8floppy.h"
 #include "isadma.h"
 
 // Obtained from the command line later
@@ -18,6 +20,7 @@ unsigned int  nSectorSize = 0;
 unsigned char nSectorsPerTrack = 0;
 unsigned char nCustomGapLength = 0;
 unsigned char nCustomGap3Length = 0;
+unsigned char nOnlyReprogramBIOS = 0;
 
 // Terminate with exit code, do cleanup beforehand
 void Quit(int nStatus)
@@ -35,20 +38,7 @@ void Quit(int nStatus)
 // Determine if the machine is an IBM 5150 or XT.
 unsigned char IsPCXT()
 {
-  static unsigned char nPcByte = 0;
-  
-  if (nPcByte == 0)
-  {
-    _asm {
-      push ds
-      mov ax,0f000h
-      mov ds,ax
-      mov al,[ds:0fffeh]
-      mov [nPcByte],al
-      pop ds
-    }   
-  }
-
+  unsigned char nPcByte = *((unsigned char far*)MK_FP(0xf000, 0xfffe));
   return (nPcByte > 0xfc) || (nPcByte == 0xfb);
 }
 
@@ -68,9 +58,8 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-         "8FORMAT drive: TYPE [/1] [/512] [/FM] [/N] [/Q] [/FDC port] [/G len] [/G3 len]\n\n"
-         "where:\n"
-         " drive: specify letter where the 77-track 8\" disk drive is installed,\n"
+         "8FORMAT X: TYPE [/1] [/512] [/FM] [/N] [/Q] [/FDC port] [/G len] [/G3 len] [/R]\n\n"
+         " X:     specify drive letter where the 77-track 8\" disk drive is installed,\n"
          " TYPE   specifies media geometry and density. Can be one of the following:\n"
          "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
          "        SSDD: 500K single sided, double density, 26 spt, 256B sectors, FAT12,\n"
@@ -83,14 +72,14 @@ void PrintUsage()
          " /Q     (optional): Do not format, only create boot sector and file system.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
          " /G,/G3 (optional): Set custom GAP (write) or Gap3 (format) lengths, in hex.\n"
-         "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n\n");
+         "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n"
+         " /R     (optional): Don't do anything - just apply chosen geometry into BIOS.\n"
+         "                    Applies for ALL floppy drives; reboot to load BIOS default.\n\n");
 
   if (IsPCXT() == 1)
   {
     printf("Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
   }
-         
-  printf("Formatting with /512, or using type SSDD (500K) without /N, is experimental.\n");
 
   Quit(EXIT_SUCCESS);
 }
@@ -241,6 +230,12 @@ void ParseCommandLine(int argc, char* argv[])
         PrintUsage();
       }
     }
+    
+    // Just update the BIOS INT 1Eh floppy parameter table?
+    if (strcmp(pArgument, "/R") == 0)
+    {
+      nOnlyReprogramBIOS = 1;
+    }
   }
   
   // Both quick format and no filesystem options specified?
@@ -293,27 +288,36 @@ void ParseCommandLine(int argc, char* argv[])
   }
 }
 
-void AskToContinue()
+unsigned char WaitEnterOrEscape()
 {
   unsigned char nScanCode = 0;
   
-  printf("\nInsert a disk into drive %c: and press ENTER to continue; ESC to quit...",
-         nDriveNumber + 65);
-         
-  while (nScanCode != 0x1C)
+  // While not ENTER (or ESC)
+  while ((nScanCode != 0x1C) && (nScanCode != 1))
   {
     _asm {
       xor ax,ax
       int 16h
       mov nScanCode,ah
     }
-    
-    // ESC
-    if (nScanCode == 1)
-    {
-      printf(" ESC\n");
-      Quit(EXIT_SUCCESS);
-    }
+  }
+  
+  return nScanCode;
+}
+
+void AskToContinue()
+{
+  unsigned char nScanCode = 0;
+  printf("Insert a disk into drive %c: and press ENTER to continue; ESC to quit...",
+         nDriveNumber + 65);
+	 
+  nScanCode = WaitEnterOrEscape();
+  
+  // ESC
+  if (nScanCode == 1)
+  {
+    printf(" ESC\n");
+    Quit(EXIT_SUCCESS);
   }
   
   DelLine();
@@ -321,8 +325,30 @@ void AskToContinue()
 
 void DoOperations()
 {  
+  const unsigned char nHeadCount = (nForceSingleSided == 1) ? 1 : nHeads;
+  
   // Allocate buffer for DMA transfers
   InitializeDMABuffer();
+  
+  // Inform about the drive geometry
+  printf("\nUsing the following drive geometry and parameters:\n"
+         "%u tracks, %u %s, %u %uB sectors, RW gap 0x%02X, format gap 0x%02X, %ukbps %s.\n\n",
+         nTracks,
+         nHeadCount,
+         (nHeadCount > 1) ? "heads" : "head",
+         nSectorsPerTrack,
+         nSectorSize,
+         GetGapLength(0),
+         GetGapLength(1),
+         (nDoubleDensity == 1) ? 500 : 250,
+         (nUseFM == 1) ? "FM" : "MFM");
+         
+  /// Only reprogram the BIOS floppy geometry ?
+  if (nOnlyReprogramBIOS == 1)
+  {
+    FDDWriteINT1Eh();
+    Quit(EXIT_SUCCESS);
+  }
   
   // Ask to put the disk into drive
   AskToContinue();
@@ -333,8 +359,6 @@ void DoOperations()
   // Format 77 tracks
   if (nQuickFormat == 0)
   {
-    const unsigned char nHeadCount = (nForceSingleSided == 1) ? 1 : nHeads;
-    
     unsigned char nTrackIndex = 0;
     unsigned char nHeadIndex = 0;
     
@@ -358,8 +382,24 @@ void DoOperations()
   // Write FAT12
   if (nNoCreateFilesystem == 0)
   {
+    unsigned char nScanCode = 0;
+    
     printf("Creating file system...\n");
     WriteFAT12();
+    
+    // Ask to update the BIOS INT 1Eh diskette parameter table    
+    printf("Do you want to set the new diskette parameter table, to make the disk readable?\n"
+           "Attention: Applies to all floppy drives. Reboot to load BIOS defaults.\n"
+	         "ENTER to continue, ESC to skip (the drive might be not readable under DOS).\n");
+    
+    nScanCode = WaitEnterOrEscape();
+    printf("\n");
+    
+    // Update BIOS floppy parameter table
+    if (nScanCode == 0x1C)
+    {
+      FDDWriteINT1Eh();
+    }
   }
   
   printf("Format completed.\n");  
