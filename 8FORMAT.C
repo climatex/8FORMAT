@@ -21,6 +21,9 @@ unsigned char nSectorsPerTrack = 0;
 unsigned char nCustomGapLength = 0;
 unsigned char nCustomGap3Length = 0;
 unsigned char nOnlyReprogramBIOS = 0;
+unsigned char nUseIRQ = 6;
+unsigned char nUseDMA = 2;
+unsigned int  nDataRateKbps = 0;
 
 // Terminate with exit code, do cleanup beforehand
 void Quit(int nStatus)
@@ -57,29 +60,26 @@ void PrintSplash()
 // Printed on incorrect or no command line arguments
 void PrintUsage()
 {
-  printf("\nUsage:\n"
-         "8FORMAT X: TYPE [/1] [/512] [/FM] [/N] [/Q] [/FDC port] [/G len] [/G3 len] [/R]\n\n"
-         " X:     specify drive letter where the 77-track 8\" disk drive is installed,\n"
-         " TYPE   specifies media geometry and density. Can be one of the following:\n"
-         "        SSSD: 250K single sided, single density, 26 spt, 128B sectors, FAT12,\n"
-         "        SSDD: 500K single sided, double density, 26 spt, 256B sectors, FAT12,\n"
-         "        DSSD: 500K double sided, single density, 26 spt, 128B sectors, FAT12,\n"
-         "        DSDD: 1.2M double sided, double density, 8 spt, 1024B sectors, FAT12.\n"
-         " /1     (optional): Force single side format with TYPE DSDD to get 616K SSDD.\n" 
-         " /512   (optional): Force 512B sectors regardless of chosen media or density.\n"
-         " /FM    (optional): Use FM encoding instead of the default MFM for all types.\n"
+  printf("\n"
+         "8FORMAT X: TYPE [/500K] [/512B] [/1] [/N] [/Q] [/FDC port] [/IRQ num]\n"
+         "                [/DMA num] [/G len] [/G3 len] [/R]\n\n"
+         " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
+         " TYPE   specifies media geometry, density (data encoding) and data bitrate:\n"
+         "        SSSD: 250kB 1-sided, 250 kbps  FM encoding, 26 128B sectors, FAT12,\n"
+         "        SSDD: 500kB 1-sided, 500 kbps MFM encoding, 26 256B sectors, FAT12,\n"
+         "        DSSD: 500kB 2-sided, 250 kbps  FM encoding, 26 128B sectors, FAT12,\n"
+         "        DSDD: 1.2MB 2-sided, 500 kbps MFM encoding, 8 1024B sectors, FAT12.\n"
+         " /500K  (optional): Force 500 kbps data bit rate for the chosen TYPE.\n"
+         " /512B  (optional): Force 512 byte sectors for the chosen TYPE.\n"         
+         " /1     (optional): 1-sided format only. Use with TYPE DSDD to get 616K SSDD.\n"
          " /N     (optional): Format only, do not create boot sector and file system.\n"
          " /Q     (optional): Do not format, only create boot sector and file system.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
-         " /G,/G3 (optional): Set custom GAP (write) or Gap3 (format) lengths, in hex.\n"
-         "                    Maximum: 0xff. The default is to autodetect based on TYPE.\n"
+         "        Use /IRQ (3..15) and /DMA (0..3) to override default IRQ 6 and DMA 2.\n"
+         " /G,/G3 (optional): Custom GAP (write) or Gap3 (format) sizes in hex. Max 0xff.\n"
          " /R     (optional): Don't do anything - just apply chosen geometry into BIOS.\n"
-         "                    Applies for ALL floppy drives; reboot to load BIOS default.\n\n");
-
-  if (IsPCXT() == 1)
-  {
-    printf("Note that the usage of 8\" DD media requires an HD-capable (500kbit/s) FDC.\n");
-  }
+         "                    Applies for ALL floppy drives! Reboot to load BIOS default.\n\n");
+         
 
   Quit(EXIT_SUCCESS);
 }
@@ -139,10 +139,13 @@ void ParseCommandLine(int argc, char* argv[])
       if (pArgument[2] == 'S')
       {
         nDoubleDensity = 0;
+        nDataRateKbps = 250;
+        nUseFM = 1;
       }
       else if (pArgument[2] == 'D')
       {
         nDoubleDensity = 1;
+        nDataRateKbps = 500;
       }
 
       if ((nHeads == 0) || (nDoubleDensity > 1))
@@ -153,22 +156,22 @@ void ParseCommandLine(int argc, char* argv[])
       continue;
     }
     
+    // Force 500K data rate
+    if (strcmp(pArgument, "/500K") == 0)
+    {
+      nDataRateKbps = 500;
+    }
+        
+    // Force 512-byte sectors on the chosen drive geometry
+    if (strcmp(pArgument, "/512B") == 0)
+    {
+      nForce512Sectors = 1;
+    }
+    
     // Force single-sided operation
     if (strcmp(pArgument, "/1") == 0)
     {
       nForceSingleSided = 1;
-    }
-    
-    // Force 512-byte sectors on the chosen drive geometry
-    if (strcmp(pArgument, "/512") == 0)
-    {
-      nForce512Sectors = 1;
-    }
-
-    // Use frequency modulation on FDC
-    if (strcmp(pArgument, "/FM") == 0)
-    {
-      nUseFM = 1;
     }
     
     // Quick format (create FAT12 only)
@@ -236,6 +239,38 @@ void ParseCommandLine(int argc, char* argv[])
     {
       nOnlyReprogramBIOS = 1;
     }
+    
+    // Custom IRQ number (dec.)
+    if ((strcmp(pArgument, "/IRQ") == 0) && (argc > indexArgs + 1))
+    {
+      char* pEndPointer;
+      unsigned long nIrq = strtoul(argv[indexArgs+1], &pEndPointer, 10);
+      
+      if ((nIrq > 2) && (nIrq < 16))
+      {
+        nUseIRQ = (unsigned char)nIrq;
+      }
+      else
+      {
+        PrintUsage();
+      }
+    }
+    
+    // Custom 8-bit DMA channel
+    if ((strcmp(pArgument, "/DMA") == 0) && (argc > indexArgs + 1))
+    {
+      char* pEndPointer;
+      unsigned long nDma = strtoul(argv[indexArgs+1], &pEndPointer, 10);
+      
+      if (nDma <= 3)
+      {
+        nUseDMA = (unsigned char)nDma;
+      }
+      else
+      {
+        PrintUsage();
+      }
+    }
   }
   
   // Both quick format and no filesystem options specified?
@@ -243,25 +278,17 @@ void ParseCommandLine(int argc, char* argv[])
   {
     PrintUsage();
   }
-  
-  // Third or fourth floppy drive on a newer machine?
-  // (Do not display this error if a custom floppy FDC port has been specified.)
-  if ((nFDCBase == 0x3F0) && ((nDriveNumber > 1) && (IsPCXT() == 0)))
+   
+  // Running on IBM PC/XT with 500kbps bitrate specified - just warn and run
+  if ((nDataRateKbps == 500) && (IsPCXT() == 1))
   {
-    printf("\nOnly two floppy drives are supported on this machine.\n");
-    Quit(EXIT_FAILURE);
+    printf("\nPC/XT detected. Unless there's a special FDC, the bitrate is capped to 250kbps.\n");
   }
   
-  // Running on IBM PC/XT with DD media specified - just warn and run
-  if ((nDoubleDensity == 1) && (IsPCXT() == 1))
+  // Custom FDC port, IRQ or DMA specified ?
+  if ((nFDCBase != 0x3f0) || (nUseIRQ != 6) || (nUseDMA != 2))
   {
-    printf("\nPC or XT detected. 8\" DD floppies are only supported with an HD-capable FDC.\n");
-  }
-  
-  // Double density format using FM ?
-  if ((nDoubleDensity == 1) && (nUseFM == 1))
-  {
-    printf("\nAttempting to use FM encoding in a double density mode.\n");
+    printf("\nUsing floppy controller base address at 0x%03X, IRQ %d and DMA channel %d.\n", nFDCBase, nUseIRQ, nUseDMA);
   }
   
   // Construct sector size and sectors per track information
@@ -280,7 +307,7 @@ void ParseCommandLine(int argc, char* argv[])
   {
     nSectorSize = 512;
     
-    // Show warning message if we are in single density mode (250kbit/s)
+    // Show warning message if we are in single density mode
     if (nDoubleDensity == 0)
     {
       printf("\nAttempting to format 512 byte sectors in a single density mode.\n");
@@ -332,7 +359,7 @@ void DoOperations()
   
   // Inform about the drive geometry
   printf("\nUsing the following drive geometry and parameters:\n"
-         "%u tracks, %u %s, %u %uB sectors, RW gap 0x%02X, format gap 0x%02X, %ukbps %s.\n\n",
+         "%u tracks, %u %s, %u %uB sectors, R/W gap 0x%02X, Gap3 0x%02X, %ukbps%s %s.\n\n",
          nTracks,
          nHeadCount,
          (nHeadCount > 1) ? "heads" : "head",
@@ -340,7 +367,8 @@ void DoOperations()
          nSectorSize,
          GetGapLength(0),
          GetGapLength(1),
-         (nDoubleDensity == 1) ? 500 : 250,
+         nDataRateKbps,
+         ((IsPCXT() == 1) && (nDataRateKbps > 250)) ? "??" : "",
          (nUseFM == 1) ? "FM" : "MFM");
          
   /// Only reprogram the BIOS floppy geometry ?

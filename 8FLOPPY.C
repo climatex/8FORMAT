@@ -100,10 +100,10 @@ unsigned char GetGapLength(unsigned char nFormatting)
   }
 }
 
-// The old IRQ 6 (INT 0E) pointer
-void interrupt (*oldIrqSix)();
+// The old IRQ pointer
+void interrupt (*oldIrqISR)();
 
-void interrupt newIrqSixISR()
+void interrupt newIrqISR()
 {
    // Set triggered flag + inform the PIC to re-enable IRQs again 
    _asm {
@@ -115,13 +115,15 @@ void interrupt newIrqSixISR()
    }
 }
 
-// Install IRQ6 ISR
+// Install IRQ ISR
 void InstallISR()
 {
+  const unsigned char nINTVector = (nUseIRQ > 7) ? nUseIRQ+0x68 : nUseIRQ+8;
+  
   if (nISRInstalled != 1)
   {
-    oldIrqSix = getvect(0x0e);
-    setvect(0x0e, newIrqSixISR);
+    oldIrqISR = getvect(nINTVector);
+    setvect(nINTVector, newIrqISR);
 
     nISRInstalled = 1;
   }
@@ -129,9 +131,11 @@ void InstallISR()
 
 void RemoveISR()
 {
+  const unsigned char nINTVector = (nUseIRQ > 7) ? nUseIRQ+0x68 : nUseIRQ+8;
+  
   if (nISRInstalled == 1)
   {
-    setvect(0x0e, oldIrqSix);
+    setvect(nINTVector, oldIrqISR);
   }
 }
 
@@ -157,8 +161,9 @@ unsigned char WaitForIRQ()
     delay(100);
   }
   
-  printf("\nFloppy drive controller failed to respond in time (IRQ6 timeout).\n"
-         "Check proper connection of the drive, disk presence, and if the FDC works okay.\n");  
+  printf("\nFloppy drive controller failed to respond in time (IRQ %d timeout).\n"
+         "Check proper connection of the drive, disk presence, and if the FDC works okay.\n",
+         nUseIRQ);
   Quit(EXIT_FAILURE);
   return 0;
 }
@@ -397,6 +402,8 @@ void FDDReset()
 {  
   unsigned char nIdx;
   
+  printf("Initializing floppy drive controller...");
+  
   InstallISR();
   
   // Controller reset
@@ -421,18 +428,19 @@ void FDDReset()
   FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
   FDDSendData(cHeadLoadTime << 1);
   
-  if (nDoubleDensity == 1)
+  if (nDataRateKbps == 500)
   {
-    // Set 500 kbps data rate for a DD 8" floppy. 3F7h only in AT
+    // Set 500 kbps data rate (AT and newer)
     outportb(nFDCBase + 7, 0);
   }
   else if (IsPCXT() == 0)
   {
-    // If single-density 8" floppy, set 250 kbps data rate. But only on an AT and newer, XTs have it default
+    // 250 kbps data rate (XT: don't do anything)
     outportb(nFDCBase + 7, 2);
   }
   
   FDDCalibrate();
+  DelLine();
 }
 
 unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char nST2)

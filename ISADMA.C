@@ -1,6 +1,7 @@
 #include <dos.h>
 #include <stdlib.h>
 
+#include "8format.h"
 #include "isadma.h"
 
 unsigned char* pDMABuffer = NULL; //Public pointer to the 1K DMA buffer
@@ -76,24 +77,25 @@ void PrepareDMABufferForTransfer(unsigned char nToMemory, unsigned int nBytes)
 {
   //nToMemory 1 to read from drive to memory, 0 to write from memory
   // TODO Reading from drive to memory not implemented yet: format with verify?
-  unsigned char nDMAMode = nToMemory ? 0x46 : 0x4a; // Without autoinit bit, to support old systems
+  unsigned char nDMAMode = nToMemory ? 0x44 : 0x48; // Without autoinit bit, to support old systems
+  unsigned char nDMABase = nUseDMA * 2; // DMA base register
   nDMATransferLength = nBytes - 1;
   
-  outportb(0x0a, 0x06);   //Mask channel 2
+  outportb(0x0a, nUseDMA | 4);   //Mask chosen channel
 
   //Program the address, low 8bits, high 8bits and higher 4bit nibble into the page register (20bit)
   outportb(0x0c, 0xff);   //Reset flip-flop
-  outportb(0x04, (unsigned char)nDMAAddress);
-  outportb(0x04, (unsigned char)(nDMAAddress >> 8));
-  outportb(0x81, (unsigned char)(nDMAAddress >> 16));
+  outportb(nDMABase, (unsigned char)nDMAAddress);
+  outportb(nDMABase, (unsigned char)(nDMAAddress >> 8));
+  outportb(0x81,     (unsigned char)(nDMAAddress >> 16));
  
   //Program the count; low 8bits, high 8bits
   outportb(0x0c, 0xff);   //Reset flip-flop
-  outportb(0x05, (unsigned char)nDMATransferLength);
-  outportb(0x05, (unsigned char)(nDMATransferLength >> 8));
+  outportb(nDMABase+1, (unsigned char)nDMATransferLength);
+  outportb(nDMABase+1, (unsigned char)(nDMATransferLength >> 8));
 
   //Program transfer mode for read/write
-  outportb(0x0b, nDMAMode);
+  outportb(0x0b, nUseDMA | nDMAMode);
 
-  outportb(0x0a, 0x02);   //Unmask channel 2
+  outportb(0x0a, nUseDMA);   //Unmask chosen channel
 }

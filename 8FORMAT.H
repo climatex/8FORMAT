@@ -15,6 +15,9 @@ extern unsigned char nSectorsPerTrack;
 extern unsigned char nCustomGapLength;
 extern unsigned char nCustomGap3Length;
 extern unsigned char nOnlyReprogramBIOS;
+extern unsigned char nUseIRQ;
+extern unsigned char nUseDMA;
+extern unsigned int  nDataRateKbps;
 
 void Quit(int);
 unsigned char IsPCXT();
