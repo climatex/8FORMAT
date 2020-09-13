@@ -3,6 +3,7 @@
 
 extern unsigned int  nFDCBase;
 extern unsigned char nUseFM;
+extern unsigned char nFormatWithVerify;
 extern unsigned char nQuickFormat;
 extern unsigned char nForceSingleSided;
 extern unsigned char nNoCreateFilesystem;
@@ -18,6 +19,8 @@ extern unsigned char nOnlyReprogramBIOS;
 extern unsigned char nUseIRQ;
 extern unsigned char nUseDMA;
 extern unsigned int  nDataRateKbps;
+extern unsigned char sLaunch8TSR[9][4];
+extern unsigned char nFormatByte;
 
 void Quit(int);
 unsigned char IsPCXT();

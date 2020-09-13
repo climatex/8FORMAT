@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dos.h>
+#include <process.h>
 
 #include "8format.h"
 #include "8floppy.h"
@@ -9,6 +10,7 @@
 // Obtained from the command line later
 unsigned int  nFDCBase = 0x3f0;
 unsigned char nUseFM = 0;
+unsigned char nFormatWithVerify = 0;
 unsigned char nQuickFormat = 0;
 unsigned char nForceSingleSided = 0;
 unsigned char nNoCreateFilesystem = 0;
@@ -24,6 +26,8 @@ unsigned char nOnlyReprogramBIOS = 0;
 unsigned char nUseIRQ = 6;
 unsigned char nUseDMA = 2;
 unsigned int  nDataRateKbps = 0;
+unsigned char sLaunch8TSR[9][4] = {0};
+unsigned char nFormatByte = 0xF6;
 
 // Terminate with exit code, do cleanup beforehand
 void Quit(int nStatus)
@@ -35,6 +39,40 @@ void Quit(int nStatus)
   // Important before passing control to DOS
   FDDResetBIOS();
   
+  // Execute 8TSR if need be
+  if (sLaunch8TSR[0][0] == 1)
+  {
+    unsigned nFileAttributes;
+
+    // 8TSR.EXE must exist    
+    if (_dos_getfileattr("8tsr.exe", &nFileAttributes) == 0)
+    {
+      // Launch it, at least once. Exit code is 0 on success
+      // or 1, if the TSR was already in (and unloaded itself) - repeat.
+      
+      int nExitCode = -1;
+      while ((nExitCode != 0) && (nExitCode != 768))
+      {
+        nExitCode = spawnl(P_WAIT, "8TSR.EXE", "8TSR",
+                           sLaunch8TSR[1], sLaunch8TSR[2], sLaunch8TSR[3], sLaunch8TSR[4],
+                           sLaunch8TSR[5], sLaunch8TSR[6], sLaunch8TSR[7], sLaunch8TSR[8],
+                           NULL);
+                           
+        if (nExitCode == -1)
+        {
+          printf("Failed to run 8TSR.EXE.\n");
+          break;
+        }
+      }
+    }
+    
+    else
+    {
+      printf("8TSR.EXE not found, cannot set the BIOS diskette parameter table.\n");
+    }
+  }
+  
+  // Exit to OS
   exit(nStatus);
 }
 
@@ -61,8 +99,8 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\n"
-         "8FORMAT X: TYPE [/500K] [/512B] [/1] [/N] [/Q] [/FDC port] [/IRQ num]\n"
-         "                [/DMA num] [/G len] [/G3 len] [/R]\n\n"
+         "8FORMAT X: TYPE [/500K] [/512B] [/1] [/V] [/N] [/Q] [/FDC port]\n"
+         "                [/IRQ num] [/DMA num] [/G len] [/G3 len] [/R]\n\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
          " TYPE   specifies media geometry, density (data encoding) and data bitrate:\n"
          "        SSSD: 250kB 1-sided, 250 kbps  FM encoding, 26 128B sectors, FAT12,\n"
@@ -72,13 +110,14 @@ void PrintUsage()
          " /500K  (optional): Force 500 kbps data bit rate for the chosen TYPE.\n"
          " /512B  (optional): Force 512 byte sectors for the chosen TYPE.\n"         
          " /1     (optional): 1-sided format only. Use with TYPE DSDD to get 616K SSDD.\n"
+         " /V     (optional): Format with verify, much slower.\n"
          " /N     (optional): Format only, do not create boot sector and file system.\n"
          " /Q     (optional): Do not format, only create boot sector and file system.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
          "        Use /IRQ (3..15) and /DMA (0..3) to override default IRQ 6 and DMA 2.\n"
          " /G,/G3 (optional): Custom GAP (write) or Gap3 (format) sizes in hex. Max 0xff.\n"
          " /R     (optional): Don't do anything - just apply chosen geometry into BIOS.\n"
-         "                    Applies for ALL floppy drives! Reboot to load BIOS default.\n\n");
+         "                    Applies for ALL floppy drives! Reboot to load BIOS default.\n");
          
 
   Quit(EXIT_SUCCESS);
@@ -172,6 +211,12 @@ void ParseCommandLine(int argc, char* argv[])
     if (strcmp(pArgument, "/1") == 0)
     {
       nForceSingleSided = 1;
+    }
+    
+    // Format with verify
+    if (strcmp(pArgument, "/V") == 0)
+    {
+      nFormatWithVerify = 1;
     }
     
     // Quick format (create FAT12 only)
@@ -368,7 +413,7 @@ void DoOperations()
          GetGapLength(0),
          GetGapLength(1),
          nDataRateKbps,
-         ((IsPCXT() == 1) && (nDataRateKbps > 250)) ? "??" : "",
+         ((IsPCXT() == 1) && (nDataRateKbps > 250)) ? "(?)" : "",
          (nUseFM == 1) ? "FM" : "MFM");
          
   /// Only reprogram the BIOS floppy geometry ?
@@ -389,19 +434,85 @@ void DoOperations()
   {
     unsigned char nTrackIndex = 0;
     unsigned char nHeadIndex = 0;
+    unsigned int nBadsOccurence = 0;
     
     printf("Formatting...\n");
     
     for (; nTrackIndex < nTracks; nTrackIndex++)
-    {    
+    {
       while (nHeadIndex != nHeadCount)
       {
+        unsigned char nVerifyResult;
+        
+        printf("\rHead: %u Track: %u  ", nHeadIndex, nTrackIndex);        
         FDDSeek(nTrackIndex, nHeadIndex);
-        FDDFormat();
+        
+        // Format without verify?
+        if (nFormatWithVerify == 0)
+        {
+          printf("\r");
+          FDDFormat();
+          
+          nHeadIndex++;
+          continue;
+        }        
+        
+        // Simple format with verify: write and read the first and last sectors on track   
+        printf(" Format");
+        FDDFormat(); //Whole track at once
+        
+        // Write 0xAA's on the first and last sectors
+        printf(" Write");
+        memset(pDMABuffer, 0xaa, nSectorSize);
+        FDDWrite(1);
+        FDDWrite(nSectorsPerTrack);
+        
+        // Read the sectors. Compare the last byte of each to check for 0xAA
+        printf(" Verify");
+        FDDRead(1);
+        nVerifyResult = pDMABuffer[nSectorSize-1] == 0xAA;
+        
+        if (nVerifyResult == 1)
+        {
+          FDDRead(nSectorsPerTrack);
+          nVerifyResult = pDMABuffer[nSectorSize-1] == 0xAA;
+        }
+                
+        // Check the result
+        if (nVerifyResult != 1)
+        {
+          printf(" - did not format correctly\n");
+          nBadsOccurence++;
+        }
+        
+        // If passed, write the 0xF6 format byte back again to those 2 sectors.
+        else
+        {
+          memset(pDMABuffer, nFormatByte, nSectorSize);
+          FDDWrite(1);
+          FDDWrite(nSectorsPerTrack);        
+          
+          DelLine();
+        }
+        
         nHeadIndex++;
       }
 
       nHeadIndex = 0;
+    }
+    
+    // Skip creation of filesystem if any bad occurences were found during verify
+    if (nBadsOccurence > 0)
+    {
+      printf("\n\nA total of %d tracks failed to format properly. ", nBadsOccurence);
+      
+      if (nNoCreateFilesystem == 0)
+      {
+        printf("Skipping filesystem creation.\nTo force it, run 8FORMAT without /V.");
+        nNoCreateFilesystem = 1;
+      }
+      
+      printf("\n");
     }
   }
 
@@ -416,20 +527,23 @@ void DoOperations()
     WriteFAT12();
     
     // Ask to update the BIOS INT 1Eh diskette parameter table    
-    printf("Do you want to set the new diskette parameter table, to make the disk readable?\n"
-           "Attention: Applies to all floppy drives. Reboot to load BIOS defaults.\n"
-	         "ENTER to continue, ESC to skip (the drive might be not readable under DOS).\n");
+    printf("Finished.\n\n"
+           "Do you want to apply the 8\" floppy parameter table to make the disk accessible?\n"
+           "Warning: After that, other floppy drives might not work until you reboot.\n"
+	         "ENTER: continue, ESC: skip. If skipped, the 8\" drive might not be DOS-readable.\n");
     
     nScanCode = WaitEnterOrEscape();
-    printf("\n");
     
     // Update BIOS floppy parameter table
     if (nScanCode == 0x1C)
     {
+      printf("\n");    
       FDDWriteINT1Eh();
     }
+    
+    Quit(EXIT_SUCCESS);
   }
   
-  printf("Format completed.\n");  
+  printf("Finished.\n");  
   Quit(EXIT_SUCCESS);
 }

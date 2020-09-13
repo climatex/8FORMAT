@@ -76,7 +76,6 @@ void FreeDMABuffer()
 void PrepareDMABufferForTransfer(unsigned char nToMemory, unsigned int nBytes)
 {
   //nToMemory 1 to read from drive to memory, 0 to write from memory
-  // TODO Reading from drive to memory not implemented yet: format with verify?
   unsigned char nDMAMode = nToMemory ? 0x44 : 0x48; // Without autoinit bit, to support old systems
   unsigned char nDMABase = nUseDMA * 2; // DMA base register
   nDMATransferLength = nBytes - 1;

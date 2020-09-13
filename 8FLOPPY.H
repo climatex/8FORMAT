@@ -12,6 +12,7 @@ void FDDResetBIOS();
 
 void FDDFormat();
 void FDDWrite(unsigned char);
+void FDDRead(unsigned char);
 
 void FDDWriteINT1Eh();
 

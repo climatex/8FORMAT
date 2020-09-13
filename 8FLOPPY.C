@@ -142,7 +142,7 @@ void RemoveISR()
 // Wait for controller response, with a 6 sec timeout
 unsigned char WaitForIRQ()
 {
-  unsigned int nTimeout = 60;
+  unsigned int nTimeout = 1200;
   
   if (nISRInstalled != 1)
   {
@@ -158,7 +158,7 @@ unsigned char WaitForIRQ()
     }
     
     nTimeout--;
-    delay(100);
+    delay(5);
   }
   
   printf("\nFloppy drive controller failed to respond in time (IRQ %d timeout).\n"
@@ -170,7 +170,7 @@ unsigned char WaitForIRQ()
 
 unsigned char FDDGetData()
 {  
-  unsigned int nTimeout = 60;
+  unsigned int nTimeout = 1200;
   
   while(nTimeout != 0)
   {
@@ -181,7 +181,7 @@ unsigned char FDDGetData()
     }
     
     nTimeout--;
-    delay(100);
+    delay(5);
   }
   
   printf("\nFailed to get data from the floppy drive controller (RQM / DIO timeout).\n"
@@ -193,7 +193,7 @@ unsigned char FDDGetData()
 
 void FDDSendData(unsigned char nData)
 {  
-  unsigned int nTimeout = 60;
+  unsigned int nTimeout = 1200;
   
   while(nTimeout != 0) 
   {
@@ -205,7 +205,7 @@ void FDDSendData(unsigned char nData)
     }
     
     nTimeout--;
-    delay(100);
+    delay(5);
   }
   
   printf("\nFailed to send data to the floppy drive controller (RQM / DIO timeout).\n"
@@ -456,13 +456,13 @@ unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char
     // Drive not ready error
     if ( ((nST0 & 0xC0) == 0xC0) || ((nST0 & 8) == 8) )
     {
-      printf(" Not Ready");
+      printf(" Not ready");
     }
       
     // UC/equipment error
     if(nST0 & 0x10)
     {
-      printf(" Drive Fault");
+      printf(" Drive fault");
     }
   }
     
@@ -486,7 +486,7 @@ unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char
     }
     if (nST1 & 4)
     {
-      printf(" No Data (Sector not found)");
+      printf(" No data (sector not found)");
     }
     if (nST1 & 2)
     {
@@ -530,9 +530,7 @@ unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char
 void FDDFormat()
 { 
   unsigned char nIdx;
-  
-  printf("\rHead: %u Track: %u  \r", nCurrentHead, nCurrentTrack);
-  
+    
   // Clear 1K DMA buffer
   memset(pDMABuffer, 0, 1024);
 
@@ -563,7 +561,7 @@ void FDDFormat()
     FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
     FDDSendData(nSectorsPerTrack); //Last sector on track
     FDDSendData(GetGapLength(1)); //Format GAP3 length
-    FDDSendData(0xf6); //Format fill byte 0xf6
+    FDDSendData(nFormatByte); //Format fill byte
       
     WaitForIRQ();
     
@@ -648,48 +646,80 @@ void FDDWrite(unsigned char nSectorNo)
   Quit(EXIT_FAILURE);
 }
 
-// Updates the INT 1Eh BIOS diskette parameter table to match the new geometry.
-// Required for DOS that relies on BIOS INT 13h disk services.
+// To update the INT 1Eh BIOS diskette parameter table, execute 8TSR.
+// Here, prepare the command line arguments; execute 8TSR just before the end.
 void FDDWriteINT1Eh()
 {
-  // Get pointer to the table first
-  unsigned int far* pTableSegment = (unsigned int far*)MK_FP(0, 0x7A);
-  unsigned int far* pTableOffset = (unsigned int far*)MK_FP(0, 0x78);
+  // A flag to enable this to be processed
+  sLaunch8TSR[0][0] = 1;
   
-  // Get data from table
-  unsigned char far* pSectorSize = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+3);
-  unsigned char far* pEOT = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+4);
-  unsigned char far* pGapLength = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+5);
-  unsigned char far* pDTL = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+6);
-  unsigned char far* pGap3Length = (unsigned char far*)MK_FP(*pTableSegment, (*pTableOffset)+7);
+  // Command line arguments: 
+  // drivenumber tracks heads sectorsize EOT RWgap DTL GAP3
+  // All numbers are of BYTE length (decadic max. "255" - 3 bytes + \0)
+  sprintf(sLaunch8TSR[1], "%u", nDriveNumber);
+  sprintf(sLaunch8TSR[2], "%u", nTracks);
+  sprintf(sLaunch8TSR[3], "%u", nHeads);
+  sprintf(sLaunch8TSR[4], "%u", ConvertSectorSize(nSectorSize));
+  sprintf(sLaunch8TSR[5], "%u", nSectorsPerTrack);
+  sprintf(sLaunch8TSR[6], "%u", GetGapLength(0));
+  sprintf(sLaunch8TSR[7], "%u", ((nSectorSize == 128) ? 0x80 : 0xff));
+  sprintf(sLaunch8TSR[8], "%u", GetGapLength(1));
+}
+
+// Reads a single sector from the active (seeked) track and head number
+// Input: sector number (1-based !)
+void FDDRead(unsigned char nSectorNo)
+{ 
+  unsigned char nIdx;
   
-  printf("BIOS INT 1Eh global diskette parameters table for all drives:\n");
-  
-  // Update sector size (0 to 3)
-  printf("Sector size byte:    was %u", *pSectorSize);
-  *pSectorSize = ConvertSectorSize(nSectorSize);
-  printf(", now %u (%u bytes per sector)\n", *pSectorSize, nSectorSize);
-  
-  // Update sectors per track  
-  printf("EOT (sectors/track): was %u", *pEOT);  
-  *pEOT = nSectorsPerTrack;
-  printf(", now %u\n", *pEOT);
-  
-  // Read/write gap length
-  printf("R/W gap length:      was 0x%02X", *pGapLength);
-  *pGapLength = GetGapLength(0); //RW gap length
-  printf(", now 0x%02X\n", *pGapLength);
-  
-  // Data transfer length
-  printf("DTL (transfer len):  was 0x%02X", *pDTL);  
-  *pDTL = (nSectorSize == 128) ? 0x80 : 0xff;
-  printf(", now 0x%02X\n", *pDTL);
-  
-  // Format gap3 length
-  printf("Format gap length:   was 0x%02X", *pGap3Length);  
-  *pGap3Length = GetGapLength(1);
-  printf(", now 0x%02X\n", *pGap3Length);
-  
-  nNeedsReset = 1;  
-  printf("\nGlobal diskette parameters table updated successfully.\n");
+    // Clear 1K DMA buffer
+  memset(pDMABuffer, 0, 1024);
+   
+  // Three read retries
+  for (nIdx = 0; nIdx < 3; nIdx++)
+  {
+    unsigned char nST0;
+    unsigned char nST1;
+    unsigned char nST2;
+    
+    // Setup DMA
+    PrepareDMABufferForTransfer(1, nSectorSize);
+   
+    // Now send command    
+    FDDSendCommand(0x46); //0x46 Read sector
+    FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
+    FDDSendData(nCurrentTrack); //currently seeked track and head
+    FDDSendData(nCurrentHead); //lol redundant but needed
+    FDDSendData(nSectorNo); //Which sector to read
+    FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
+    FDDSendData(nSectorNo); //Read only one sector
+    FDDSendData(GetGapLength(0)); //Gap length
+    FDDSendData((nSectorSize == 128) ? (unsigned char)nSectorSize : 0xff); //Data transfer length
+      
+    WaitForIRQ();
+    
+    // Get status information   
+    nST0 = FDDGetData();
+    nST1 = FDDGetData();
+    nST2 = FDDGetData();
+    
+    // Track, head, sector number and size trashed
+    FDDGetData();
+    FDDGetData();
+    FDDGetData();
+    FDDGetData();
+    
+    if (DetectErrors(nST0, nST1, nST2) == 0)
+    {
+      // No errors, success
+      return;  
+    }
+    
+    // Errors detected - next attempt
+    printf("\n");
+  }
+
+  printf("\nRead of track %u, head %u, sector %u failed after 3 attempts.\n",
+         nCurrentTrack, nCurrentHead, nSectorNo);
+  Quit(EXIT_FAILURE);
 }
