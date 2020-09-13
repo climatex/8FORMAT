@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dos.h>
-#include <process.h>
 
 #include "8format.h"
 #include "8floppy.h"
@@ -26,7 +25,7 @@ unsigned char nOnlyReprogramBIOS = 0;
 unsigned char nUseIRQ = 6;
 unsigned char nUseDMA = 2;
 unsigned int  nDataRateKbps = 0;
-unsigned char sLaunch8TSR[9][4] = {0};
+unsigned char sLaunch8TSR[255] = {0};
 unsigned char nFormatByte = 0xF6;
 
 // Terminate with exit code, do cleanup beforehand
@@ -40,30 +39,14 @@ void Quit(int nStatus)
   FDDResetBIOS();
   
   // Execute 8TSR if need be
-  if (sLaunch8TSR[0][0] == 1)
+  if (strlen(sLaunch8TSR) > 0)
   {
     unsigned nFileAttributes;
 
-    // 8TSR.EXE must exist    
+    // 8TSR.EXE must exist
     if (_dos_getfileattr("8tsr.exe", &nFileAttributes) == 0)
     {
-      // Launch it, at least once. Exit code is 0 on success
-      // or 1, if the TSR was already in (and unloaded itself) - repeat.
-      
-      int nExitCode = -1;
-      while ((nExitCode != 0) && (nExitCode != 768))
-      {
-        nExitCode = spawnl(P_WAIT, "8TSR.EXE", "8TSR",
-                           sLaunch8TSR[1], sLaunch8TSR[2], sLaunch8TSR[3], sLaunch8TSR[4],
-                           sLaunch8TSR[5], sLaunch8TSR[6], sLaunch8TSR[7], sLaunch8TSR[8],
-                           NULL);
-                           
-        if (nExitCode == -1)
-        {
-          printf("Failed to run 8TSR.EXE.\n");
-          break;
-        }
-      }
+      system(sLaunch8TSR);
     }
     
     else
@@ -382,7 +365,7 @@ void AskToContinue()
   unsigned char nScanCode = 0;
   printf("Insert a disk into drive %c: and press ENTER to continue; ESC to quit...",
          nDriveNumber + 65);
-	 
+   
   nScanCode = WaitEnterOrEscape();
   
   // ESC
@@ -530,7 +513,7 @@ void DoOperations()
     printf("Finished.\n\n"
            "Do you want to apply the 8\" floppy parameter table to make the disk accessible?\n"
            "Warning: After that, other floppy drives might not work until you reboot.\n"
-	         "ENTER: continue, ESC: skip. If skipped, the 8\" drive might not be DOS-readable.\n");
+           "ENTER: continue, ESC: skip. If skipped, the 8\" drive might not be DOS-readable.\n");
     
     nScanCode = WaitEnterOrEscape();
     

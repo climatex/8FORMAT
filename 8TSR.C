@@ -77,7 +77,7 @@ unsigned char InstallationCheck()
     regs.x.ax = 0xDEAD;
     sregs.es = FP_SEG(&nIsInstalled);
     regs.x.di = FP_OFF(&nIsInstalled);    
-  	int86x(0xE8, &regs, &regs, &sregs);
+    int86x(0xE8, &regs, &regs, &sregs);
   }
     
   return nIsInstalled == 0xBEEF;
@@ -151,7 +151,7 @@ void interrupt TSRInterrupt()
   {
     // Write 0xBEEF to ES:DI
     unsigned int far* pOut = (unsigned int far*)MK_FP(_ES,_DI);
-		*pOut = 0xBEEF; //Dead beef
+    *pOut = 0xBEEF; //Dead beef
     return;
   }
    
@@ -207,11 +207,10 @@ int main(int argc, char* argv[])
     exit(-1);
   }
    
-  // Already installed - unload, free memory and run again to set new parameters
+  // Already installed - unload
   if (InstallationCheck() == 1)
   {
     UnloadTSR();
-    exit(1);
   }
   
   // Did 8FORMAT run from a floppy?
@@ -278,8 +277,8 @@ blip:
   // Save the old interrupt handlers, get local PSP
   asm cli
   oldINTE8 = getvect(0xE8);
-	oldINT13 = getvect(0x13);
-	oldINT08 = getvect(8);
+  oldINT13 = getvect(0x13);
+  oldINT08 = getvect(8);
   nTSRPSP = GetPSP();
   
   // Install new interrupt handlers
@@ -288,24 +287,15 @@ blip:
   setvect(0xEA, oldINT13);
   setvect(8,    TimerInterrupt);
 //setvect(0x13, DiskInterrupt);
+  
   // Compiler limitation:
   // far DiskInterrupt() does not contain the "interrupt" keyword. Need to do my own setvect :)
-
   {
-    unsigned int nSegment = FP_SEG(&DiskInterrupt);
-    unsigned int nOffset = FP_OFF(&DiskInterrupt);
-   
-   _asm {
-      push es
-      xor ax,ax
-      mov es,ax
-      mov di,13h*4
-      mov ax,[nOffset]
-      stosw
-      mov ax,[nSegment]
-      stosw
-      pop es
-    }
+    unsigned int far* pSegment = (unsigned int far*)MK_FP(0, 0x13*4+2);
+    unsigned int far* pOffset = (unsigned int far*)MK_FP(0, 0x13*4);
+    
+    *pSegment = FP_SEG(&DiskInterrupt);
+    *pOffset = FP_OFF(&DiskInterrupt);
   }
   
   // Initialize top of stack pointer

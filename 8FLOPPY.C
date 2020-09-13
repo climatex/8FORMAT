@@ -649,21 +649,13 @@ void FDDWrite(unsigned char nSectorNo)
 // To update the INT 1Eh BIOS diskette parameter table, execute 8TSR.
 // Here, prepare the command line arguments; execute 8TSR just before the end.
 void FDDWriteINT1Eh()
-{
-  // A flag to enable this to be processed
-  sLaunch8TSR[0][0] = 1;
-  
+{  
   // Command line arguments: 
   // drivenumber tracks heads sectorsize EOT RWgap DTL GAP3
   // All numbers are of BYTE length (decadic max. "255" - 3 bytes + \0)
-  sprintf(sLaunch8TSR[1], "%u", nDriveNumber);
-  sprintf(sLaunch8TSR[2], "%u", nTracks);
-  sprintf(sLaunch8TSR[3], "%u", nHeads);
-  sprintf(sLaunch8TSR[4], "%u", ConvertSectorSize(nSectorSize));
-  sprintf(sLaunch8TSR[5], "%u", nSectorsPerTrack);
-  sprintf(sLaunch8TSR[6], "%u", GetGapLength(0));
-  sprintf(sLaunch8TSR[7], "%u", ((nSectorSize == 128) ? 0x80 : 0xff));
-  sprintf(sLaunch8TSR[8], "%u", GetGapLength(1));
+  sprintf(sLaunch8TSR, "8TSR %u %u %u %u %u %u %u %u",
+                       nDriveNumber, nTracks, nHeads, ConvertSectorSize(nSectorSize), nSectorsPerTrack,
+                       GetGapLength(0), ((nSectorSize == 128) ? 0x80 : 0xff), GetGapLength(1));
 }
 
 // Reads a single sector from the active (seeked) track and head number

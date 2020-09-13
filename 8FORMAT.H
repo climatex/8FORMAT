@@ -19,7 +19,7 @@ extern unsigned char nOnlyReprogramBIOS;
 extern unsigned char nUseIRQ;
 extern unsigned char nUseDMA;
 extern unsigned int  nDataRateKbps;
-extern unsigned char sLaunch8TSR[9][4];
+extern unsigned char sLaunch8TSR[255];
 extern unsigned char nFormatByte;
 
 void Quit(int);
