@@ -112,13 +112,13 @@ void PrepareBPB()
   memcpy(pDMABuffer, sBIOSParameterBlock, sizeof(sBIOSParameterBlock));
   
   // Common values for 77-track 8"s
-  *pNumberOfHeads = (unsigned int)((nForceSingleSided == 1) ? 1 : nHeads); 
+  *pNumberOfHeads = (unsigned int)nHeads; 
   *pSectorsPerTrack = (unsigned int)nSectorsPerTrack;
   *pBytesPerSector = nSectorSize;
-  *pTotalSectors = (unsigned int)nSectorsPerTrack * (*pNumberOfHeads) * (unsigned int)nTracks;
+  *pTotalSectors = (unsigned int)nSectorsPerTrack * nHeads * (unsigned int)nTracks;
   
-  // 250K Single sided, single density (TYPE SSSD or DSSD with /1)
-  if (((nHeads == 1) || (nForceSingleSided == 1)) && (nDoubleDensity == 0))
+  // 250kB SSSD (TYPE DSSD /1)
+  if ((nSectorsPerTrack == 26) && (nSectorSize == 128) && (nHeads == 1))
   {
     *pSectorsPerCluster = 4;
     *pReservedSectors = 4;
@@ -126,19 +126,9 @@ void PrepareBPB()
     *pMediaDescriptor = 0xfe;
     *pSectorsPerFAT = 6;
   }
-  
-  // EXPERIMENTAL: 500K Single sided, double density (TYPE SSDD)
-  else if ((nHeads == 1) && (nDoubleDensity == 1))
-  {
-    *pSectorsPerCluster = 2;
-    *pReservedSectors = 2;
-    *pRootDirEntries = 68;
-    *pMediaDescriptor = 0xfe;
-    *pSectorsPerFAT = 4;
-  }
-  
-  // 500K Double sided, single density (TYPE DSSD)
-  else if ((nHeads == 2) && (nDoubleDensity == 0))
+
+  // 500kB TYPE DSSD
+  else if ((nSectorsPerTrack == 26) && (nSectorSize == 128) && (nHeads == 2))
   {
     *pSectorsPerCluster = 4;
     *pReservedSectors = 4;
@@ -147,9 +137,8 @@ void PrepareBPB()
     *pSectorsPerFAT = 6;
   }
   
-  // 1.2M Double sided, double density (TYPE DSDD), or also
-  // 616K Single sided, double density (TYPE DSDD with /1)
-  else
+  // 1.2MB TYPE DSDD, DSDD /1
+  else if ((nSectorsPerTrack == 8) && (nSectorSize == 1024))
   {
     *pSectorsPerCluster = 1;
     *pReservedSectors = 1;
@@ -158,21 +147,39 @@ void PrepareBPB()
     *pSectorsPerFAT = 2;
   }
   
-  // EXPERIMENTAL: Force 512B sectors on the given geometry
-  if (nSectorSize == 512)
+  // 1.2MB EXT1, EXT1 /1
+  else if ((nSectorsPerTrack == 16) && (nSectorSize == 512))
   {
-    // There's one 512B sector per FAT cluster
     *pSectorsPerCluster = 1;
-    
-    // Change the reserved sector count (1 bootsector)
     *pReservedSectors = 1;
+    *pRootDirEntries = 224;
+    *pMediaDescriptor = 0xf9;
+    *pSectorsPerFAT = 7;
   }
   
-  // For the (experimental) 256 and 512byte sector sizes:
-  // Round up the root dir entries count, to fit the chosen sector size. Adds zero, normally.
+  // 1.0MB EXT2, EXT2 /1
+  else if ((nSectorsPerTrack == 26) && (nSectorSize == 256))
+  {
+    *pSectorsPerCluster = 2;
+    *pReservedSectors = 2;
+    *pRootDirEntries = 112;
+    *pMediaDescriptor = 0xfe;
+    *pSectorsPerFAT = 4;
+  }
+  
+  // 616kB EXT3, EXT3 /1
+  else
+  {
+    *pSectorsPerCluster = 2;
+    *pReservedSectors = 1;
+    *pRootDirEntries = 112;
+    *pMediaDescriptor = 0xf9;
+    *pSectorsPerFAT = 3;
+  }
+   
+  // Round up the root dir entries count, to fit the chosen sector size...
   *pRootDirEntries += (((*pRootDirEntries) * 32) % nSectorSize) / 32;
   
-  nHeads = (unsigned char)(*pNumberOfHeads);
   nReservedSectors = *pReservedSectors;
   nRootDirEntries = *pRootDirEntries;
   nSectorsPerFAT = *pSectorsPerFAT;

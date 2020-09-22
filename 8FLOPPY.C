@@ -82,7 +82,8 @@ unsigned char GetGapLength(unsigned char nFormatting)
     }
     else
     {
-      return (nFormatting == 0) ? 0x1B : 0x54;
+      // This one a little lower, to cram 16 sectors per track :) [was: 0x1B (R/W) 0x54 (Gap3)]
+      return (nFormatting == 0) ? 0x18 : 0x50;
     }
   }
         
@@ -225,7 +226,7 @@ void FDDHeadLoad()
   if (nDriveReady != 1)
   {
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
-    delay(500);
+    delay(cHeadLoadTime + 300 /* "motor on time" - safety margin */);
     nDriveReady = 1;
     
     // Disable IRQ0 to prevent BIOS from turning the drive motor off automatically
@@ -242,6 +243,7 @@ void FDDHeadRetract()
   {
     // "Motor off", drive unselected
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | 0x0C);
+    delay(cHeadUnloadTime);
     nDriveReady = 0;
     
     // Enable IRQ0
@@ -312,17 +314,67 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
   Quit(EXIT_FAILURE);
 }
 
+void FDDReset()
+{  
+  unsigned char nIdx;
+   
+  InstallISR();
+  
+  // Controller reset
+  outportb(nFDCBase + 2, 0);
+  delay(100);
+  outportb(nFDCBase + 2, 0x0c); // IRQ allowed, motors off, no drive selected
+  delay(100);
+  
+  WaitForIRQ();
+  
+  // Check interrupt status 3x (a must, drive is in polling mode)
+  for(nIdx = 0; nIdx < 4; nIdx++)
+  {
+    FDDSendCommand(8);
+    FDDGetData(); //ST0, trashed
+    FDDGetData(); //current track, trashed
+  }
+
+  //0x3 Fix drive data command - load new mechanical values
+  nNeedsReset = 1;
+  FDDSendCommand(3);
+  FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
+  FDDSendData(cHeadLoadTime << 1);
+  
+  if (nDataRateKbps == 500)
+  {
+    // Set 500 kbps data rate (AT and newer)
+    outportb(nFDCBase + 7, 0);
+  }
+  else if (IsPCXT() == 0)
+  {
+    // 250 kbps data rate (XT: don't do anything)
+    outportb(nFDCBase + 7, 2);
+  }
+}
+
 void FDDCalibrate()
 {
   unsigned int nIdx;
   unsigned char nST0;
   unsigned char nTrack;
   
+  unsigned char nCalibrationError = 0;
+  
   FDDHeadLoad();
   
   // Three retries
   for (nIdx = 0; nIdx < 3; nIdx++)
   {
+    if (nCalibrationError == 1)
+    {
+      FDDHeadRetract();
+      FDDReset();
+      FDDHeadLoad();
+      nCalibrationError = 0;
+    }
+    
     FDDSendCommand(7); //0x7 Recalibrate command
     FDDSendData(nDriveNumber); //Which drive (0 to 3)
     
@@ -339,6 +391,7 @@ void FDDCalibrate()
       //UC error
       if(nST0 & 0x10)
       {
+        nCalibrationError = 1;
         continue;
       }
       
@@ -347,6 +400,7 @@ void FDDCalibrate()
         //Track not 0 after recal
         if (nTrack > 0) 
         {
+          nCalibrationError = 1;
           continue;
         }
         
@@ -361,6 +415,7 @@ void FDDCalibrate()
     // Seek did not succeed for whatever reason
     else
     {
+      nCalibrationError = 1;     
       continue;
     }
   }
@@ -396,51 +451,6 @@ blip:
     int 13h
     loop blip
   }
-}
-
-void FDDReset()
-{  
-  unsigned char nIdx;
-  
-  printf("Initializing floppy drive controller...");
-  
-  InstallISR();
-  
-  // Controller reset
-  outportb(nFDCBase + 2, 0);
-  delay(100);
-  outportb(nFDCBase + 2, 0x0c); // IRQ allowed, motors off, no drive selected
-  delay(100);
-  
-  WaitForIRQ();
-  
-  // Check interrupt status 3x (a must, drive is in polling mode)
-  for(nIdx = 0; nIdx < 4; nIdx++)
-  {
-    FDDSendCommand(8);
-    FDDGetData(); //ST0, trashed
-    FDDGetData(); //current track, trashed
-  }
-
-  //0x3 Fix drive data command - load new mechanical values
-  nNeedsReset = 1;
-  FDDSendCommand(3);
-  FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
-  FDDSendData(cHeadLoadTime << 1);
-  
-  if (nDataRateKbps == 500)
-  {
-    // Set 500 kbps data rate (AT and newer)
-    outportb(nFDCBase + 7, 0);
-  }
-  else if (IsPCXT() == 0)
-  {
-    // 250 kbps data rate (XT: don't do anything)
-    outportb(nFDCBase + 7, 2);
-  }
-  
-  FDDCalibrate();
-  DelLine();
 }
 
 unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char nST2)

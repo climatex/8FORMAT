@@ -11,12 +11,10 @@ unsigned int  nFDCBase = 0x3f0;
 unsigned char nUseFM = 0;
 unsigned char nFormatWithVerify = 0;
 unsigned char nQuickFormat = 0;
-unsigned char nForceSingleSided = 0;
 unsigned char nNoCreateFilesystem = 0;
 unsigned char nDriveNumber = 0;
 unsigned char nTracks = 77;
-unsigned char nHeads = 0;
-unsigned char nDoubleDensity = 255;
+unsigned char nHeads = 2;
 unsigned int  nSectorSize = 0;
 unsigned char nSectorsPerTrack = 0;
 unsigned char nCustomGapLength = 0;
@@ -24,7 +22,7 @@ unsigned char nCustomGap3Length = 0;
 unsigned char nOnlyReprogramBIOS = 0;
 unsigned char nUseIRQ = 6;
 unsigned char nUseDMA = 2;
-unsigned int  nDataRateKbps = 0;
+unsigned int  nDataRateKbps = 500;
 unsigned char sLaunch8TSR[255] = {0};
 unsigned char nFormatByte = 0xF6;
 
@@ -82,25 +80,25 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\n"
-         "8FORMAT X: TYPE [/500K] [/512B] [/1] [/V] [/N] [/Q] [/FDC port]\n"
+         "8FORMAT X: TYPE [/1] [/500K] [/MFM] [/V] [/N] [/Q] [/FDC port]\n"
          "                [/IRQ num] [/DMA num] [/G len] [/G3 len] [/R]\n\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
          " TYPE   specifies media geometry, density (data encoding) and data bitrate:\n"
-         "        SSSD: 250kB 1-sided, 250 kbps  FM encoding, 26 128B sectors, FAT12,\n"
-         "        SSDD: 500kB 1-sided, 500 kbps MFM encoding, 26 256B sectors, FAT12,\n"
-         "        DSSD: 500kB 2-sided, 250 kbps  FM encoding, 26 128B sectors, FAT12,\n"
-         "        DSDD: 1.2MB 2-sided, 500 kbps MFM encoding, 8 1024B sectors, FAT12.\n"
-         " /500K  (optional): Force 500 kbps data bit rate for the chosen TYPE.\n"
-         " /512B  (optional): Force 512 byte sectors for the chosen TYPE.\n"         
-         " /1     (optional): 1-sided format only. Use with TYPE DSDD to get 616K SSDD.\n"
+         "        DSSD: 500kB 2-sided, 250 kbps  FM encoding, 26  128B sectors, FAT12,\n"
+         "        DSDD: 1.2MB 2-sided, 500 kbps MFM encoding,  8 1024B sectors, FAT12,\n"
+         "        EXT1: 1.2MB 2-sided, 500 kbps MFM encoding, 16  512B sectors, FAT12,\n"
+         "        EXT2: 1.0MB 2-sided, 500 kbps MFM encoding, 26  256B sectors, FAT12,\n"         
+         "        EXT3: 616kB 2-sided, 250 kbps  FM encoding,  8  512B sectors, FAT12.\n"
+         " /1     (optional): One-sided format (SS?D) for chosen TYPE. Capacity halved.\n"
+         " /500K  (optional): Use 500 kbps data bitrate (with types DSSD or EXT3).\n"
+         " /MFM   (optional): Use MFM data encoding (with types DSSD or EXT3).\n"
          " /V     (optional): Format with verify, much slower.\n"
          " /N     (optional): Format only, do not create boot sector and file system.\n"
          " /Q     (optional): Do not format, only create boot sector and file system.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
          "        Use /IRQ (3..15) and /DMA (0..3) to override default IRQ 6 and DMA 2.\n"
          " /G,/G3 (optional): Custom GAP (write) or Gap3 (format) sizes in hex. Max 0xff.\n"
-         " /R     (optional): Don't do anything - just apply chosen geometry into BIOS.\n"
-         "                    Applies for ALL floppy drives! Reboot to load BIOS default.\n");
+         " /R     (optional): Only update the BIOS floppy table. Applies for ALL drives!\n");
          
 
   Quit(EXIT_SUCCESS);
@@ -110,10 +108,9 @@ void PrintUsage()
 void ParseCommandLine(int argc, char* argv[])
 {
   int indexArgs = 0;
-  unsigned char nForce512Sectors = 0;
 
   // Incorrect number of arguments
-  if ((argc < 3) || (argc > 12))
+  if ((argc < 3) || (argc > 15))
   {
     PrintUsage();
   }
@@ -137,45 +134,60 @@ void ParseCommandLine(int argc, char* argv[])
       {
         PrintUsage();
       }
-      
-      continue;      
     }
     
     else if (indexArgs == 2)
     {
-      // Determine density and sides
-      if ((strlen(pArgument) != 4) || (pArgument[1] != 'S') || (pArgument[3] != 'D'))
+      // Determine TYPE.
+      if (strlen(pArgument) != 4)
       {
         PrintUsage();
       }
       
-      if (pArgument[0] == 'S')
+      // 500kB DSSD
+      if (strcmp(pArgument, "DSSD") == 0)
       {
-        nHeads = 1;
-      }
-      else if (pArgument[0] == 'D')
-      {
-        nHeads = 2;
-      }
-      
-      if (pArgument[2] == 'S')
-      {
-        nDoubleDensity = 0;
         nDataRateKbps = 250;
         nUseFM = 1;
+        nSectorsPerTrack = 26;
+        nSectorSize = 128;
       }
-      else if (pArgument[2] == 'D')
+    
+      // 1.2MB DSDD
+      else if (strcmp(pArgument, "DSDD") == 0)
       {
-        nDoubleDensity = 1;
-        nDataRateKbps = 500;
+        nSectorsPerTrack = 8;
+        nSectorSize = 1024;
       }
-
-      if ((nHeads == 0) || (nDoubleDensity > 1))
+      
+      // 1.2MB EXT1
+      else if (strcmp(pArgument, "EXT1") == 0)
+      {
+        nSectorsPerTrack = 16;
+        nSectorSize = 512;
+      }
+      
+      // 1.0MB EXT2
+      else if (strcmp(pArgument, "EXT2") == 0)
+      {
+        nSectorsPerTrack = 26;
+        nSectorSize = 256;
+      }
+      
+      // 616kB EXT3
+      else if (strcmp(pArgument, "EXT3") == 0)
+      {
+        nDataRateKbps = 250;
+        nUseFM = 1;
+        nSectorsPerTrack = 8;
+        nSectorSize = 512;
+      }
+      
+      // Unrecognized
+      else
       {
         PrintUsage();
       }
-
-      continue;
     }
     
     // Force 500K data rate
@@ -183,17 +195,17 @@ void ParseCommandLine(int argc, char* argv[])
     {
       nDataRateKbps = 500;
     }
-        
-    // Force 512-byte sectors on the chosen drive geometry
-    if (strcmp(pArgument, "/512B") == 0)
+    
+    // Force MFM encoding
+    if (strcmp(pArgument, "/MFM") == 0)
     {
-      nForce512Sectors = 1;
+      nUseFM = 0;
     }
     
     // Force single-sided operation
     if (strcmp(pArgument, "/1") == 0)
     {
-      nForceSingleSided = 1;
+      nHeads = 1;
     }
     
     // Format with verify
@@ -271,8 +283,7 @@ void ParseCommandLine(int argc, char* argv[])
     // Custom IRQ number (dec.)
     if ((strcmp(pArgument, "/IRQ") == 0) && (argc > indexArgs + 1))
     {
-      char* pEndPointer;
-      unsigned long nIrq = strtoul(argv[indexArgs+1], &pEndPointer, 10);
+      int nIrq = atoi(argv[indexArgs+1]);
       
       if ((nIrq > 2) && (nIrq < 16))
       {
@@ -287,10 +298,9 @@ void ParseCommandLine(int argc, char* argv[])
     // Custom 8-bit DMA channel
     if ((strcmp(pArgument, "/DMA") == 0) && (argc > indexArgs + 1))
     {
-      char* pEndPointer;
-      unsigned long nDma = strtoul(argv[indexArgs+1], &pEndPointer, 10);
+      int nDma = atoi(argv[indexArgs+1]);
       
-      if (nDma <= 3)
+      if ((nDma >= 0) && (nDma < 4))
       {
         nUseDMA = (unsigned char)nDma;
       }
@@ -313,33 +323,16 @@ void ParseCommandLine(int argc, char* argv[])
     printf("\nPC/XT detected. Unless there's a special FDC, the bitrate is capped to 250kbps.\n");
   }
   
+  // Running on IBM PC/XT with FM encoding specified - just warn and run
+  if ((nUseFM == 1) && (IsPCXT() == 1))
+  {
+    printf("\nPC/XT detected. Unless there's a special FDC, the encoding is always MFM.\n");
+  }
+  
   // Custom FDC port, IRQ or DMA specified ?
   if ((nFDCBase != 0x3f0) || (nUseIRQ != 6) || (nUseDMA != 2))
   {
     printf("\nUsing floppy controller base address at 0x%03X, IRQ %d and DMA channel %d.\n", nFDCBase, nUseIRQ, nUseDMA);
-  }
-  
-  // Construct sector size and sectors per track information
-  nSectorsPerTrack = (nDoubleDensity == 0) ? 26 : 8;
-  nSectorSize = (nDoubleDensity == 0) ? 128 : 1024;
-  
-  // Special case: Experimental 500K SSDD with FAT12 (unless /N specified)
-  if ((nHeads == 1) && (nDoubleDensity == 1))
-  {
-    nSectorSize = 256;
-    nSectorsPerTrack = 26;
-  }
-  
-  // Special case 2: Experimental: use 512 bytes per sector
-  if (nForce512Sectors == 1)
-  {
-    nSectorSize = 512;
-    
-    // Show warning message if we are in single density mode
-    if (nDoubleDensity == 0)
-    {
-      printf("\nAttempting to format 512 byte sectors in a single density mode.\n");
-    }
   }
 }
 
@@ -379,25 +372,24 @@ void AskToContinue()
 }
 
 void DoOperations()
-{  
-  const unsigned char nHeadCount = (nForceSingleSided == 1) ? 1 : nHeads;
-  
+{    
   // Allocate buffer for DMA transfers
   InitializeDMABuffer();
   
   // Inform about the drive geometry
   printf("\nUsing the following drive geometry and parameters:\n"
-         "%u tracks, %u %s, %u %uB sectors, R/W gap 0x%02X, Gap3 0x%02X, %ukbps%s %s.\n\n",
+         "%u tracks, %u %s, %u %uB sectors, R/W gap 0x%02X, Gap3 0x%02X, %ukbps%s %s%s.\n\n",
          nTracks,
-         nHeadCount,
-         (nHeadCount > 1) ? "heads" : "head",
+         nHeads,
+         (nHeads > 1) ? "heads" : "head",
          nSectorsPerTrack,
          nSectorSize,
          GetGapLength(0),
          GetGapLength(1),
          nDataRateKbps,
          ((IsPCXT() == 1) && (nDataRateKbps > 250)) ? "(?)" : "",
-         (nUseFM == 1) ? "FM" : "MFM");
+         (nUseFM == 1) ? "FM" : "MFM",
+         ((IsPCXT() == 1) && (nUseFM == 1)) ? "(?)" : "");
          
   /// Only reprogram the BIOS floppy geometry ?
   if (nOnlyReprogramBIOS == 1)
@@ -410,7 +402,10 @@ void DoOperations()
   AskToContinue();
   
   // Prepare FDC and drive
+  printf("Initializing floppy drive controller...");
   FDDReset();
+  FDDCalibrate();
+  DelLine();
 
   // Format 77 tracks
   if (nQuickFormat == 0)
@@ -423,7 +418,7 @@ void DoOperations()
     
     for (; nTrackIndex < nTracks; nTrackIndex++)
     {
-      while (nHeadIndex != nHeadCount)
+      while (nHeadIndex != nHeads)
       {
         unsigned char nVerifyResult;
         

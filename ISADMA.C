@@ -78,7 +78,25 @@ void PrepareDMABufferForTransfer(unsigned char nToMemory, unsigned int nBytes)
   //nToMemory 1 to read from drive to memory, 0 to write from memory
   unsigned char nDMAMode = nToMemory ? 0x44 : 0x48; // Without autoinit bit, to support old systems
   unsigned char nDMABase = nUseDMA * 2; // DMA base register
-  nDMATransferLength = nBytes - 1;
+  
+  unsigned char nDMAPage; // DMA page register
+  switch(nUseDMA)
+  {
+  case 0:
+    nDMAPage = 0x87;
+    break;
+  case 1:
+    nDMAPage = 0x83;
+    break;
+  case 2:
+  default:
+    nDMAPage = 0x81;
+    break;
+  case 3:
+    nDMAPage = 0x82;
+  }
+  
+  nDMATransferLength = nBytes - 1; // DMA transfer length (in bytes minus one)
   
   outportb(0x0a, nUseDMA | 4);   //Mask chosen channel
 
@@ -86,7 +104,7 @@ void PrepareDMABufferForTransfer(unsigned char nToMemory, unsigned int nBytes)
   outportb(0x0c, 0xff);   //Reset flip-flop
   outportb(nDMABase, (unsigned char)nDMAAddress);
   outportb(nDMABase, (unsigned char)(nDMAAddress >> 8));
-  outportb(0x81,     (unsigned char)(nDMAAddress >> 16));
+  outportb(nDMAPage, (unsigned char)(nDMAAddress >> 16));
  
   //Program the count; low 8bits, high 8bits
   outportb(0x0c, 0xff);   //Reset flip-flop
