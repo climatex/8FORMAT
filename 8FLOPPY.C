@@ -56,7 +56,7 @@ unsigned char GetGapLength(unsigned char nFormatting)
   }
   
   // Try to autodetect. (values per NEC uPD765 datasheet, Table 3)  
-  switch(nSectorSize)
+  switch(nPhysicalSectorSize)
   {
   case 128:
   default:
@@ -226,7 +226,7 @@ void FDDHeadLoad()
   if (nDriveReady != 1)
   {
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
-    delay(cHeadLoadTime + 300 /* "motor on time" - safety margin */);
+    delay(cHeadLoadTime + 150 /* "motor on time" - safety margin */);
     nDriveReady = 1;
     
     // Disable IRQ0 to prevent BIOS from turning the drive motor off automatically
@@ -322,9 +322,9 @@ void FDDReset()
   
   // Controller reset
   outportb(nFDCBase + 2, 0);
-  delay(100);
+  delay(25);
   outportb(nFDCBase + 2, 0x0c); // IRQ allowed, motors off, no drive selected
-  delay(100);
+  delay(25);
   
   WaitForIRQ();
   
@@ -436,7 +436,7 @@ void FDDResetBIOS()
   
   // If the previous operation failed, assume the FDC seized up dead!
   outportb(nFDCBase + 2, 0); // Hard reset of the controller
-  delay(100);
+  delay(25);
   outportb(nFDCBase + 2, 0x0c);
     
   // Now use BIOS to recalibrate and load defaults to all drives (3 to 0)
@@ -529,8 +529,17 @@ unsigned char DetectErrors(unsigned char nST0, unsigned char nST1, unsigned char
     }
     if (nST2 & 1)
     {
-      printf(" No address mark DAM");
+      printf(" No deleted address mark");
     }    
+  }
+  
+  // Reset and recalibrate on error
+  if (nError)
+  {
+    FDDHeadRetract();
+    FDDReset();
+    FDDCalibrate();
+    FDDSeek(nCurrentTrack, nCurrentHead);
   }
   
   return nError;
@@ -548,18 +557,19 @@ void FDDFormat()
   for (nIdx = 0; nIdx < 3; nIdx++)
   {
     unsigned char nIdx2 = 0;
+    unsigned char nIdx3 = 0;
     
     unsigned char nST0;
     unsigned char nST1;
     unsigned char nST2;
     
     // Prepare 4-byte 'CHSN' format buffer for all sectors on track
-    for(nIdx = 0; nIdx < nSectorsPerTrack; nIdx++)
+    for(nIdx2 = 0; nIdx2 < nSectorsPerTrack; nIdx2++)
     {
-      pDMABuffer[nIdx2++] = nCurrentTrack;
-      pDMABuffer[nIdx2++] = nCurrentHead;
-      pDMABuffer[nIdx2++] = nIdx+1; //Sector number (1-based)
-      pDMABuffer[nIdx2++] = ConvertSectorSize(nSectorSize); //Sector size 0 to 3
+      pDMABuffer[nIdx3++] = nCurrentTrack;
+      pDMABuffer[nIdx3++] = nCurrentHead;
+      pDMABuffer[nIdx3++] = nIdx2+1; //Sector number (1-based)
+      pDMABuffer[nIdx3++] = ConvertSectorSize(nPhysicalSectorSize); //Sector size 0 to 3
     }
     
     // Setup DMA
@@ -568,7 +578,7 @@ void FDDFormat()
     // Now send command    
     FDDSendCommand(0x4D); //0x4d Format track
     FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
-    FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
+    FDDSendData(ConvertSectorSize(nPhysicalSectorSize)); //Sector size, 0 to 3
     FDDSendData(nSectorsPerTrack); //Last sector on track
     FDDSendData(GetGapLength(1)); //Format GAP3 length
     FDDSendData(nFormatByte); //Format fill byte
@@ -615,7 +625,7 @@ void FDDWrite(unsigned char nSectorNo)
     unsigned char nST2;
     
     // Setup DMA
-    PrepareDMABufferForTransfer(0, nSectorSize);
+    PrepareDMABufferForTransfer(0, nPhysicalSectorSize);
    
     // Now send command    
     FDDSendCommand(0x45); //0x45 Write sector
@@ -623,10 +633,10 @@ void FDDWrite(unsigned char nSectorNo)
     FDDSendData(nCurrentTrack); //currently seeked track and head
     FDDSendData(nCurrentHead); //lol redundant but needed
     FDDSendData(nSectorNo); //Which sector to write
-    FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
+    FDDSendData(ConvertSectorSize(nPhysicalSectorSize)); //Sector size, 0 to 3
     FDDSendData(nSectorNo); //Write only one sector
     FDDSendData(GetGapLength(0)); //Gap length
-    FDDSendData((nSectorSize == 128) ? (unsigned char)nSectorSize : 0xff); //Data transfer length
+    FDDSendData((nPhysicalSectorSize == 128) ? (unsigned char)nPhysicalSectorSize : 0xff); //Data transfer length
       
     WaitForIRQ();
     
@@ -664,8 +674,8 @@ void FDDWriteINT1Eh()
   // drivenumber tracks heads sectorsize EOT RWgap DTL GAP3
   // All numbers are of BYTE length (decadic max. "255" - 3 bytes + \0)
   sprintf(sLaunch8TSR, "8TSR %u %u %u %u %u %u %u %u",
-                       nDriveNumber, nTracks, nHeads, ConvertSectorSize(nSectorSize), nSectorsPerTrack,
-                       GetGapLength(0), ((nSectorSize == 128) ? 0x80 : 0xff), GetGapLength(1));
+                       nDriveNumber, nTracks, nHeads, ConvertSectorSize(nPhysicalSectorSize), nSectorsPerTrack,
+                       GetGapLength(0), ((nPhysicalSectorSize == 128) ? 0x80 : 0xff), GetGapLength(1));
 }
 
 // Reads a single sector from the active (seeked) track and head number
@@ -685,7 +695,7 @@ void FDDRead(unsigned char nSectorNo)
     unsigned char nST2;
     
     // Setup DMA
-    PrepareDMABufferForTransfer(1, nSectorSize);
+    PrepareDMABufferForTransfer(1, nPhysicalSectorSize);
    
     // Now send command    
     FDDSendCommand(0x46); //0x46 Read sector
@@ -693,10 +703,10 @@ void FDDRead(unsigned char nSectorNo)
     FDDSendData(nCurrentTrack); //currently seeked track and head
     FDDSendData(nCurrentHead); //lol redundant but needed
     FDDSendData(nSectorNo); //Which sector to read
-    FDDSendData(ConvertSectorSize(nSectorSize)); //Sector size, 0 to 3
+    FDDSendData(ConvertSectorSize(nPhysicalSectorSize)); //Sector size, 0 to 3
     FDDSendData(nSectorNo); //Read only one sector
     FDDSendData(GetGapLength(0)); //Gap length
-    FDDSendData((nSectorSize == 128) ? (unsigned char)nSectorSize : 0xff); //Data transfer length
+    FDDSendData((nPhysicalSectorSize == 128) ? (unsigned char)nPhysicalSectorSize : 0xff); //Data transfer length
       
     WaitForIRQ();
     
