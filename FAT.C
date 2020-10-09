@@ -270,63 +270,54 @@ void WriteBootCode()
 
 void WriteRootDir()
 { 
-  // Determine the start of the FAT region as a starting sector index
+  // Start of the FAT region
   unsigned char nSectorIdx = (unsigned char)nReservedSectors + 1;
-   
-  unsigned int nFAT; 
-  unsigned int nBytesWritten;
-  unsigned long nTotalWritten = (unsigned long)nReservedSectors * nPhysicalSectorSize;
+  
+  unsigned int nReservedLength = 0;  
+  unsigned int nBytesWritten = 0;  
   unsigned char nHead = 0;
   unsigned char nTrack = 0;
   
-  // Write first FAT and second FAT (empty, just with the beginning signature)
-  for (nFAT = 0; nFAT < 2; nFAT++)
-  {
-    nBytesWritten = 0;
-    
-    while(nBytesWritten <= nSectorsPerFAT*nLogicalSectorSize)
-    {
-      memset(pDMABuffer, 0, nPhysicalSectorSize);
-    
-      // Add FAT signature on start of FAT
-      if (nBytesWritten == 0)
-      {
-        memcpy(pDMABuffer, sFATSignature, sizeof(sFATSignature));
-      }
-      
-      FDDWrite(nSectorIdx++);
-      
-      // Need to advance to the next head (or track) ?
-      if (nSectorIdx > nSectorsPerTrack)
-      {
-        nSectorIdx = 1;
-        nHead++;
-
-        if (nHead > nHeads-1)
-        {
-          nHead = 0;
-          FDDSeek(++nTrack, nHead);     
-        }
-        else
-        {
-          FDDSeek(nTrack, nHead);
-        }
-      }
-
-      nBytesWritten += nPhysicalSectorSize;
-      nTotalWritten += nPhysicalSectorSize;
-    }
-  }
-
-  nBytesWritten = 0;  
-
-  // Now write an empty root directory following the FATs
-  // Root directory size: root dir entries X 32bytes one entry
+  // Disk write buffer length: 2 FATs + root directory length.
+  const unsigned int nBufferLen = (2 * nSectorsPerFAT * nLogicalSectorSize) + (nRootDirEntries * 32);
   
-  while(nBytesWritten <= nRootDirEntries*32)
+  // Allocate disk write buffer  
+  unsigned char* pBuffer = (unsigned char*)calloc(nBufferLen, sizeof(unsigned char));
+  if (!pBuffer)
   {
-    memset(pDMABuffer, 0, nPhysicalSectorSize);    
-    FDDWrite(nSectorIdx++);
+    printf("\nMemory allocation error\n");
+    Quit(EXIT_FAILURE);
+  }
+  
+  // Physical sector size not equivalent to logical? This means that 512B physical sectors are forced.
+  // As such, set that the FAT region starts at sector 2 (one bootsector is reserved).
+  if (nPhysicalSectorSize != nLogicalSectorSize)
+  {
+    nSectorIdx = 2;
+    nReservedLength = 512;
+  }
+  else
+  {
+    // Compute bootsector/reserved sectors length in bytes
+    nReservedLength = (unsigned int)nReservedSectors * nLogicalSectorSize;
+  }
+ 
+  // Sign two FATs
+  memcpy(&pBuffer[0], sFATSignature, sizeof(sFATSignature));
+  memcpy(&pBuffer[nSectorsPerFAT*nLogicalSectorSize], sFATSignature, sizeof(sFATSignature));
+  
+  // Write logical format to disk
+  while (nBytesWritten < nBufferLen)
+  {
+    // Copy memory for the whole sector size, or just the remainder
+    unsigned int nCopyCount = abs(nBytesWritten-nBufferLen);
+    if (nCopyCount > nPhysicalSectorSize)
+    {
+      nCopyCount = nPhysicalSectorSize;
+    }
+    
+    // DMA buffer filled with format byte (to mark "unwritten" stuff, instead of zeros)
+    memset(pDMABuffer, nFormatByte, 1024);
     
     // Need to advance to the next head (or track) ?
     if (nSectorIdx > nSectorsPerTrack)
@@ -345,12 +336,18 @@ void WriteRootDir()
       }
     }
     
-    nBytesWritten += nPhysicalSectorSize;
-    nTotalWritten += nPhysicalSectorSize;
+    // Copy memory for writing
+    memcpy(&pDMABuffer[0], &pBuffer[nBytesWritten], nCopyCount);
+
+    // Write FATs/root directory in nPhysicalSectorSize chunks
+    FDDWrite(nSectorIdx++);    
+    nBytesWritten += nCopyCount;
   }
   
-  // Compute free disk space (total capacity minus bootsector(s), FATs and root dir)
-  nTotalDiskSpace = nTotalDiskCapacity - nTotalWritten;
+  free(pBuffer);
+  
+  // Compute free disk space (total capacity minus reserved length/bootsector(s), FATs and root dir)
+  nTotalDiskSpace = nTotalDiskCapacity - nReservedLength - nBytesWritten;
 }
 
 void DisplayDiskInformation()
