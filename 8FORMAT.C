@@ -22,6 +22,7 @@ unsigned char nLogicalSectorsPerTrack = 0;
 unsigned char nCustomGapLength = 0;
 unsigned char nCustomGap3Length = 0;
 unsigned char nOnlyReprogramBIOS = 0;
+unsigned char nOnlyRecalibrateFDD = 0;
 unsigned char nUseIRQ = 6;
 unsigned char nUseDMA = 2;
 unsigned int  nDataRateKbps = 500;
@@ -82,9 +83,9 @@ void PrintSplash()
 // Printed on incorrect or no command line arguments
 void PrintUsage()
 {
-  printf("\n"
+  printf("\nUsage:\n"
          "8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/512PH] [/FAT12] [/Q]\n"
-         "                [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len] [/DPT]\n\n"
+         "                [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len]\n\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
          " TYPE   sets geometry, density (bitrate, data encoding) & physical sector size:\n"
          "        DSSD: 500kB 2-sided, single-density (250 kbps  FM), 26  128B sectors,\n"
@@ -93,7 +94,7 @@ void PrintUsage()
          "        EXT2: 1.0MB 2-sided, double-density (500 kbps MFM), 26  256B sectors,\n"         
          "        EXT3: 616kB 2-sided, single-density (250 kbps  FM),  8  512B sectors.\n"
          " /1     (optional): Single-sided format for the chosen TYPE. Capacity halved.\n"
-         " /V     (optional): Format and verify. Much slower.\n"         
+         " /V     (optional): Format and verify. MUCH slower.\n"         
          " /500K  (optional): Use 500 kbps data bitrate (with types DSSD or EXT3).\n"
          " /MFM   (optional): Use MFM data encoding (with types DSSD or EXT3).\n"
          " /512PH (optional): Set 512B physical sectors, TYPE treated as logical format.\n"
@@ -101,8 +102,7 @@ void PrintUsage()
          " /Q     (optional): Do not format, just write the boot sector and filesystem.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
          "        Use /IRQ (3..15) and /DMA (0..3) to override default IRQ 6 and DMA 2.\n"
-         " /G,/G3 (optional): Custom GAP (write) or Gap3 (format) sizes in hex. Max 0xff.\n"
-         " /DPT   (optional): Do nothing; just update the BIOS DPT for all floppy drives.\n");         
+         " /G,/G3 (optional): Custom GAP (write) or Gap3 (format) sizes in hex. Max 0xff.\n");         
 
   Quit(EXIT_SUCCESS);
 }
@@ -114,7 +114,7 @@ void ParseCommandLine(int argc, char* argv[])
   unsigned char nForce512Physical = 0;
 
   // Incorrect number of arguments
-  if ((argc < 3) || (argc > 16))
+  if ((argc < 3) || (argc > 15))
   {
     PrintUsage();
   }
@@ -124,9 +124,18 @@ void ParseCommandLine(int argc, char* argv[])
     // Case insensitive comparison
     const char* pArgument = strupr(argv[indexArgs]);
 
+    // Determine drive letter
     if (indexArgs == 1)
     {
-      // Convert drive letter to drive number
+      // ! UNDOCUMENTED: Only update the global BIOS Diskette Parameter Table, /DPT
+      // Requires TYPE and optional /512PH, /G, /G3
+      if (strcmp(pArgument, "/DPT") == 0)
+      {
+        nOnlyReprogramBIOS = 1;
+        continue;
+      }
+      
+      // Determine drive letter (physical drive number)
       if ((strlen(pArgument) > 2) || ((strlen(pArgument) == 2) && pArgument[1] != ':'))
       {
         PrintUsage();
@@ -140,9 +149,18 @@ void ParseCommandLine(int argc, char* argv[])
       }
     }
     
+    // Determine TYPE (density and geometry combo)
     else if (indexArgs == 2)
     {
-      // Determine TYPE.
+      // ! UNDOCUMENTED: Only try to fix an out-of-alignment drive caused by BIOS POST seek
+      // Requires drive letter as a first argument
+      if ((strcmp(pArgument, "/UNFUCK") == 0) && (nOnlyReprogramBIOS == 0))
+      {
+        nOnlyRecalibrateFDD = 1;
+        break;
+      }
+      
+      // Determine TYPE      
       if (strlen(pArgument) != 4)
       {
         PrintUsage();
@@ -298,12 +316,6 @@ void ParseCommandLine(int argc, char* argv[])
       }
     }
     
-    // Just update the BIOS INT 1Eh floppy parameter table?
-    else if (strcmp(pArgument, "/DPT") == 0)
-    {
-      nOnlyReprogramBIOS = 1;
-    }
-    
     // Custom IRQ number (dec.)
     else if ((strcmp(pArgument, "/IRQ") == 0) && (argc > indexArgs + 1))
     {
@@ -341,14 +353,12 @@ void ParseCommandLine(int argc, char* argv[])
     }
   }
     
-  // Force 512B physical sectors and logical TYPE - also force 500k MFM
+  // Force 512B physical sectors and logical TYPE - change the physical geometry
   if (nForce512Physical == 1)
   {
     unsigned int nTotalBytesPerTrack = nSectorsPerTrack * nPhysicalSectorSize;
     
     nPhysicalSectorSize = 512;
-    nUseFM = 0;
-    nDataRateKbps = 500;
     
     // Recalculate new (physical) sectors per track count, keep the logical count as is.
     nSectorsPerTrack = (unsigned char)(nTotalBytesPerTrack / nPhysicalSectorSize);
@@ -358,8 +368,8 @@ void ParseCommandLine(int argc, char* argv[])
     }
   }
   
-  // Only update the DPT - do not show any warnings following
-  if (nOnlyReprogramBIOS == 1)
+  // Only update the DPT or recal the drive - do not show any warnings following
+  if ((nOnlyReprogramBIOS == 1) || (nOnlyRecalibrateFDD == 1))
   {
     return;
   }
@@ -432,8 +442,29 @@ void AskToContinue()
 
 void DoOperations()
 {    
-  // Allocate buffer for DMA transfers
-  InitializeDMABuffer();
+  // UNDOCUMENTED: Only reprogram the BIOS floppy geometry ?
+  if (nOnlyReprogramBIOS == 1)
+  {
+    FDDWriteINT1Eh();
+    
+    printf("\n");
+    Quit(EXIT_SUCCESS);
+  }
+  
+  // UNDOCUMENTED: Only try to fix a drive out of alignment ?
+  if (nOnlyRecalibrateFDD == 1)
+  {
+    FDDReset();
+    FDDCalibrate();
+  
+    // Seek to the last 77th track, and back to track 0 again
+    FDDSeek(76, 0);
+    delay(500);
+    FDDCalibrate();
+    
+    printf("\n");
+    Quit(EXIT_SUCCESS);
+  }
   
   // Inform about the drive geometry
   printf("\nUsing%s TYPE %s with the following physical geometry and parameters:\n"
@@ -451,20 +482,21 @@ void DoOperations()
          ((IsPCXT() == 1) && (nDataRateKbps > 250)) ? "(?)" : "",
          (nUseFM == 1) ? "FM" : "MFM",
          ((IsPCXT() == 1) && (nUseFM == 1)) ? "(?)" : "");
-         
-  /// Only reprogram the BIOS floppy geometry ?
-  if (nOnlyReprogramBIOS == 1)
-  {
-    FDDWriteINT1Eh();
-    Quit(EXIT_SUCCESS);
-  }
   
   // Ask to put the disk into drive
   AskToContinue();
   
+  // Initialize DMA
+  InitializeDMABuffer();
+  
   // Prepare FDC and drive
   printf("Initializing floppy drive controller...");
   FDDReset();
+  FDDCalibrate();
+  
+  // Seek to the last 77th track, and back to track 0 again
+  FDDSeek(76, 0);
+  delay(500);
   FDDCalibrate();
   DelLine();
 
@@ -568,7 +600,7 @@ void DoOperations()
     // Ask to update the BIOS INT 1Eh diskette parameter table, if sector size wasn't 512B    
     if (nPhysicalSectorSize != 512)
     {
-      printf("Finished, with a nonstandard physical sector size that the BIOS might not read.\n\n"
+      printf("Finished, with a nonstandard physical sector size that the BIOS might not read.\n"
              "Apply a new BIOS Diskette Parameter Table (DPT) to reflect the new sector size?\n"
              "Warning: After that, other floppy drives might not work until you reboot.\n"
              "ENTER: continue, ESC: skip.\n");
@@ -578,7 +610,7 @@ void DoOperations()
       // Update BIOS floppy parameter table
       if (nScanCode == 0x1C)
       {
-        printf("\n");    
+        printf("\n");
         FDDWriteINT1Eh();
       }
 

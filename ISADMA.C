@@ -56,8 +56,6 @@ void InitializeDMABuffer()
     {
       // It doesn't cross - we're all set. Set the public 1K DMA buffer pointer
       pDMABuffer = (unsigned char*)(nDMAAddress - nDataSegment);
-
-      printf("\nDMA buffer at address: 0x%04lX (0x%04X:0x%04X)\n", nDMAAddress, _DS, (unsigned int)pDMABuffer);
       break;      
     }
   }  

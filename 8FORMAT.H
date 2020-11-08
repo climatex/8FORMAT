@@ -16,6 +16,7 @@ extern unsigned char nLogicalSectorsPerTrack;
 extern unsigned char nCustomGapLength;
 extern unsigned char nCustomGap3Length;
 extern unsigned char nOnlyReprogramBIOS;
+extern unsigned char nOnlyRecalibrateFDD;
 extern unsigned char nUseIRQ;
 extern unsigned char nUseDMA;
 extern unsigned int  nDataRateKbps;

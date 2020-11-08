@@ -5,11 +5,6 @@
 #include "8format.h"
 #include "isadma.h"
 
-// 8 inch drive mechanical control data, times in ms
-const unsigned char cStepRate = 8;
-const unsigned char cHeadLoadTime = 16;
-const unsigned char cHeadUnloadTime = 240;
-
 // IRQ fired to acknowledge?
 volatile unsigned char nIRQTriggered = 0;
 
@@ -226,7 +221,6 @@ void FDDHeadLoad()
   if (nDriveReady != 1)
   {
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | (1 << (4 + nDriveNumber)) | 0x0C);
-    delay(cHeadLoadTime + 150 /* "motor on time" - safety margin */);
     nDriveReady = 1;
     
     // Disable IRQ0 to prevent BIOS from turning the drive motor off automatically
@@ -243,7 +237,6 @@ void FDDHeadRetract()
   {
     // "Motor off", drive unselected
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | 0x0C);
-    delay(cHeadUnloadTime);
     nDriveReady = 0;
     
     // Enable IRQ0
@@ -259,6 +252,9 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
   unsigned char nIdx;
   unsigned char nST0;
   unsigned char nResultTrack;
+  
+  // Was there a seek direction change?
+  const unsigned char nDirectionChange = nTrack < nCurrentTrack;
 
   // Three retries
   for (nIdx = 0; nIdx < 3; nIdx++)
@@ -296,6 +292,13 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
           // Seek success
           nCurrentTrack = nTrack;
           nCurrentHead = nHead;
+          
+          // An 8ms delay after potential direction change might be required (Shugart SA800 etc)
+          if (nDirectionChange == 1)
+          {
+            delay(8);
+          }
+          
           return;
         }
       }
@@ -335,12 +338,6 @@ void FDDReset()
     FDDGetData(); //ST0, trashed
     FDDGetData(); //current track, trashed
   }
-
-  //0x3 Fix drive data command - load new mechanical values
-  nNeedsReset = 1;
-  FDDSendCommand(3);
-  FDDSendData((cStepRate << 4) | (cHeadUnloadTime & 0x07));
-  FDDSendData(cHeadLoadTime << 1);
   
   if (nDataRateKbps == 500)
   {
@@ -351,7 +348,26 @@ void FDDReset()
   {
     // 250 kbps data rate (XT: don't do anything)
     outportb(nFDCBase + 7, 2);
-  }
+  }  
+  delay(25);
+
+  // 0x3 Fix drive data command - load new mechanical values
+  // Table data @ https://www.isdaman.com/alsos/hardware/fdc/floppy.htm
+  nNeedsReset = 1;
+  FDDSendCommand(3);
+  
+  // 8 inch drives are old as the republic, so using very conservative stepper values:
+  // 8ms track-to-track step rate, 256ms head load time, 256ms unload time
+  
+  // First byte is SRT (upper nibble) | HUT (lower nibble)
+  // Step rate time (SRT): 8 ms (250kbps: 12 << 4, 500kbps: 8 << 4)
+  // Head unload time (HUT): 256 ms (250kbps: 8, 500kbps: 0)
+  FDDSendData((nDataRateKbps == 250) ? 0xc8 : 0x80);
+  
+  // Second byte is HLT (upper 7 bits) | non-DMA mode flag (bit 0)
+  // Head load time (HLT): 256 ms (250kbps: 64 << 1, 500kbps: 0)
+  // Non-DMA mode: 0 (we use DMA)
+  FDDSendData((nDataRateKbps == 250) ? 0x80 : 0);
 }
 
 void FDDCalibrate()
@@ -684,7 +700,7 @@ void FDDRead(unsigned char nSectorNo)
 { 
   unsigned char nIdx;
   
-    // Clear 1K DMA buffer
+  // Clear 1K DMA buffer
   memset(pDMABuffer, 0, 1024);
    
   // Three read retries
