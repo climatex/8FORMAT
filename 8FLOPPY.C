@@ -77,8 +77,16 @@ unsigned char GetGapLength(unsigned char nFormatting)
     }
     else
     {
-      // This one a little lower, to cram 16 sectors per track :) [was: 0x1B (R/W) 0x54 (Gap3)]
-      return (nFormatting == 0) ? 0x18 : 0x50;
+      // EXT3: return vanilla recommended value
+      if (strcmp(sFormatType, "EXT3") == 0)
+      {
+        return (nFormatting == 0) ? 0x1B : 0x54;
+      }
+      else
+      {
+        // These gaps a little lower, to cram a maximum of 16 512B sectors per track :)
+        return (nFormatting == 0) ? 0x18 : 0x50;
+      }
     }
   }
         
@@ -224,9 +232,10 @@ void FDDHeadLoad()
     nDriveReady = 1;
     
     // Disable IRQ0 to prevent BIOS from turning the drive motor off automatically
+    // Also mask IRQ1 (keyboard interrupts)
     {
       unsigned char nIRQMask = inportb(0x21);
-      outportb(0x21, nIRQMask | 1);
+      outportb(0x21, nIRQMask | 3);
     }
   }
 }
@@ -239,10 +248,10 @@ void FDDHeadRetract()
     outportb(nFDCBase + 2, (nDriveNumber & 0x03) | 0x0C);
     nDriveReady = 0;
     
-    // Enable IRQ0
+    // Enable IRQ0 & IRQ1
     {
       unsigned char nIRQMask = inportb(0x21);
-      outportb(0x21, nIRQMask & 0xfe);
+      outportb(0x21, nIRQMask & 0xfc);
     }
   }
 }
@@ -253,9 +262,6 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
   unsigned char nST0;
   unsigned char nResultTrack;
   
-  // Was there a seek direction change?
-  const unsigned char nDirectionChange = nTrack < nCurrentTrack;
-
   // Three retries
   for (nIdx = 0; nIdx < 3; nIdx++)
   {
@@ -293,12 +299,8 @@ void FDDSeek(unsigned char nTrack, unsigned char nHead)
           nCurrentTrack = nTrack;
           nCurrentHead = nHead;
           
-          // An 8ms delay after potential direction change might be required (Shugart SA800 etc)
-          if (nDirectionChange == 1)
-          {
-            delay(8);
-          }
-          
+          // A 50ms delay after each seek as a safety margin for all drives
+          delay(50);          
           return;
         }
       }
@@ -341,12 +343,12 @@ void FDDReset()
   
   if (nDataRateKbps == 500)
   {
-    // Set 500 kbps data rate (AT and newer)
+    // Set 500 kbps data rate
     outportb(nFDCBase + 7, 0);
   }
-  else if (IsPCXT() == 0)
+  else
   {
-    // 250 kbps data rate (XT: don't do anything)
+    // 250 kbps data rate (XT: no effect at all)
     outportb(nFDCBase + 7, 2);
   }  
   delay(25);
@@ -357,17 +359,17 @@ void FDDReset()
   FDDSendCommand(3);
   
   // 8 inch drives are old as the republic, so using very conservative stepper values:
-  // 8ms track-to-track step rate, 256ms head load time, 256ms unload time
+  // 8ms track-to-track step rate, 252ms head load time, 224ms unload time
   
   // First byte is SRT (upper nibble) | HUT (lower nibble)
   // Step rate time (SRT): 8 ms (250kbps: 12 << 4, 500kbps: 8 << 4)
-  // Head unload time (HUT): 256 ms (250kbps: 8, 500kbps: 0)
-  FDDSendData((nDataRateKbps == 250) ? 0xc8 : 0x80);
+  // Head unload time (HUT): 224 ms (250kbps: 7, 500kbps: 14)
+  FDDSendData((nDataRateKbps == 250) ? 0xc7 : 0x8e);
   
   // Second byte is HLT (upper 7 bits) | non-DMA mode flag (bit 0)
-  // Head load time (HLT): 256 ms (250kbps: 64 << 1, 500kbps: 0)
+  // Head load time (HLT): 252 ms (250kbps: 63 << 1, 500kbps: 126 << 1)
   // Non-DMA mode: 0 (we use DMA)
-  FDDSendData((nDataRateKbps == 250) ? 0x80 : 0);
+  FDDSendData((nDataRateKbps == 250) ? 0x7e : 0xfc);
 }
 
 void FDDCalibrate()

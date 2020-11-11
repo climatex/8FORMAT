@@ -53,7 +53,7 @@ void Quit(int nStatus)
     
     else
     {
-      printf("8TSR.EXE not found, cannot set the BIOS diskette parameter table.\n");
+      printf("\n8TSR.EXE not found, cannot set the BIOS diskette parameter table.\n");
     }
   }
   
@@ -84,7 +84,7 @@ void PrintSplash()
 void PrintUsage()
 {
   printf("\nUsage:\n"
-         "8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/512PH] [/FAT12] [/Q]\n"
+         "8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/FAT12] [/Q]\n"
          "                [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len]\n\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
          " TYPE   sets geometry, density (bitrate, data encoding) & physical sector size:\n"
@@ -92,12 +92,11 @@ void PrintUsage()
          "        DSDD: 1.2MB 2-sided, double-density (500 kbps MFM),  8 1024B sectors,\n"
          "        EXT1: 1.2MB 2-sided, double-density (500 kbps MFM), 16  512B sectors,\n"
          "        EXT2: 1.0MB 2-sided, double-density (500 kbps MFM), 26  256B sectors,\n"         
-         "        EXT3: 616kB 2-sided, single-density (250 kbps  FM),  8  512B sectors.\n"
+         "        EXT3: 693kB 2-sided, mix-up-density (250 kbps MFM),  9  512B sectors.\n"
          " /1     (optional): Single-sided format for the chosen TYPE. Capacity halved.\n"
          " /V     (optional): Format and verify. MUCH slower.\n"         
          " /500K  (optional): Use 500 kbps data bitrate (with types DSSD or EXT3).\n"
-         " /MFM   (optional): Use MFM data encoding (with types DSSD or EXT3).\n"
-         " /512PH (optional): Set 512B physical sectors, TYPE treated as logical format.\n"
+         " /MFM   (optional): Use MFM data encoding (with type DSSD).\n"
          " /FAT12 (optional): Format and try writing the DOS boot sector and filesystem.\n"
          " /Q     (optional): Do not format, just write the boot sector and filesystem.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
@@ -114,7 +113,7 @@ void ParseCommandLine(int argc, char* argv[])
   unsigned char nForce512Physical = 0;
 
   // Incorrect number of arguments
-  if ((argc < 3) || (argc > 15))
+  if ((argc < 3) || (argc > 20))
   {
     PrintUsage();
   }
@@ -207,13 +206,12 @@ void ParseCommandLine(int argc, char* argv[])
         nLogicalSectorSize = 256;
       }
       
-      // 616kB EXT3
+      // 693kB EXT3
       else if (strcmp(pArgument, "EXT3") == 0)
       {
         nDataRateKbps = 250;
-        nUseFM = 1;
-        nSectorsPerTrack = 8;
-        nLogicalSectorsPerTrack = 8;
+        nSectorsPerTrack = 9;
+        nLogicalSectorsPerTrack = 9;
         nPhysicalSectorSize = 512;
         nLogicalSectorSize = 512;
       }
@@ -243,7 +241,7 @@ void ParseCommandLine(int argc, char* argv[])
       nHeads = 1;
     }
     
-    // Force 512-byte sectors
+    // UNDOCUMENTED: Recalculate geometry with 512-byte physical sectors, treat TYPE as logical
     else if (strcmp(pArgument, "/512PH") == 0)
     {
       nForce512Physical = 1;
@@ -269,10 +267,10 @@ void ParseCommandLine(int argc, char* argv[])
     }
     
     // Custom floppy drive controller port has been specified
-    else if ((strcmp(pArgument, "/FDC") == 0) && (argc > indexArgs + 1))
+    else if ((strcmp(pArgument, "/FDC") == 0) && (argc > indexArgs+1))
     {
       char* pEndPointer;
-      unsigned long nPort = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      unsigned long nPort = strtoul(argv[++indexArgs], &pEndPointer, 16);
       
       if ((nPort != 0) && (nPort < 0xffff))
       {
@@ -285,10 +283,10 @@ void ParseCommandLine(int argc, char* argv[])
     }
     
     // Custom write gap length has been specified
-    else if ((strcmp(pArgument, "/G") == 0) && (argc > indexArgs + 1))
+    else if ((strcmp(pArgument, "/G") == 0) && (argc > indexArgs+1))
     {
       char* pEndPointer;
-      unsigned long nGapLen = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      unsigned long nGapLen = strtoul(argv[++indexArgs], &pEndPointer, 16);
       
       if ((nGapLen != 0) && (nGapLen <= 0xff))
       {
@@ -301,10 +299,10 @@ void ParseCommandLine(int argc, char* argv[])
     }
     
     // Custom format gap3 length has been specified
-    else if ((strcmp(pArgument, "/G3") == 0) && (argc > indexArgs + 1))
+    else if ((strcmp(pArgument, "/G3") == 0) && (argc > indexArgs+1))
     {
       char* pEndPointer;
-      unsigned long nGapLen = strtoul(argv[indexArgs+1], &pEndPointer, 16);
+      unsigned long nGapLen = strtoul(argv[++indexArgs], &pEndPointer, 16);
       
       if ((nGapLen != 0) && (nGapLen <= 0xff))
       {
@@ -317,9 +315,9 @@ void ParseCommandLine(int argc, char* argv[])
     }
     
     // Custom IRQ number (dec.)
-    else if ((strcmp(pArgument, "/IRQ") == 0) && (argc > indexArgs + 1))
+    else if ((strcmp(pArgument, "/IRQ") == 0) && (argc > indexArgs+1))
     {
-      int nIrq = atoi(argv[indexArgs+1]);
+      int nIrq = atoi(argv[++indexArgs]);
       
       if ((nIrq > 2) && (nIrq < 16))
       {
@@ -332,9 +330,9 @@ void ParseCommandLine(int argc, char* argv[])
     }
     
     // Custom 8-bit DMA channel
-    else if ((strcmp(pArgument, "/DMA") == 0) && (argc > indexArgs + 1))
+    else if ((strcmp(pArgument, "/DMA") == 0) && (argc > indexArgs+1))
     {
-      int nDma = atoi(argv[indexArgs+1]);
+      int nDma = atoi(argv[++indexArgs]);
       
       if ((nDma >= 0) && (nDma < 4))
       {
@@ -357,7 +355,7 @@ void ParseCommandLine(int argc, char* argv[])
   if (nForce512Physical == 1)
   {
     unsigned int nTotalBytesPerTrack = nSectorsPerTrack * nPhysicalSectorSize;
-    
+        
     nPhysicalSectorSize = 512;
     
     // Recalculate new (physical) sectors per track count, keep the logical count as is.
@@ -373,7 +371,9 @@ void ParseCommandLine(int argc, char* argv[])
   {
     return;
   }
-   
+  
+  // Info or warning messages follow.
+     
   // Running on IBM PC/XT with 500kbps bitrate specified - just warn and run
   if ((nDataRateKbps == 500) && (IsPCXT() == 1))
   {
@@ -385,13 +385,7 @@ void ParseCommandLine(int argc, char* argv[])
   {
     printf("\nPC/XT detected. Unless there's a special FDC, the encoding is always MFM.\n");
   }
-  
-  // 512B physical sector size overriden for TYPE, without creating filesystem
-  if ((nForce512Physical == 1) && (nNoCreateFilesystem == 1))
-  {
-    printf("\nTYPE %s with 512B sectors not treated logical, as FAT12 creation is skipped.\n", sFormatType);
-  }
-  
+   
   // Custom FDC port, IRQ or DMA specified ?
   if ((nFDCBase != 0x3f0) || (nUseIRQ != 6) || (nUseDMA != 2))
   {
@@ -401,7 +395,15 @@ void ParseCommandLine(int argc, char* argv[])
   // FAT on a non-standard physical sector size
   if ((nNoCreateFilesystem == 0) && (nPhysicalSectorSize != 512))
   {
-    printf("\nAttempting to write FAT12 on a nonstandard (%uB) floppy physical sector size.\n", nPhysicalSectorSize);
+    printf("\nWarning: non-standard physical sector size for a FAT12 floppy (%u bytes).\n"
+           "The disk might not be DOS-accessible.\n", nPhysicalSectorSize);
+  }
+  
+  // FAT on a non-standard 512B geometry
+  if ((nNoCreateFilesystem == 0) && (nForce512Physical == 1))
+  {
+    printf("\nWarning: non-standard 512B sector geometry for a FAT12 floppy.\n"
+           "Using FAT media ID 0xf0, the disk might not be universally accessible however.\n");
   }
 }
 
@@ -424,14 +426,11 @@ unsigned char WaitEnterOrEscape()
 
 void AskToContinue()
 {
-  unsigned char nScanCode = 0;
   printf("Insert a disk into drive %c: and press ENTER to continue; ESC to quit...",
          nDriveNumber + 65);
-   
-  nScanCode = WaitEnterOrEscape();
-  
+
   // ESC
-  if (nScanCode == 1)
+  if (WaitEnterOrEscape() == 1)
   {
     printf(" ESC\n");
     Quit(EXIT_SUCCESS);
@@ -446,8 +445,6 @@ void DoOperations()
   if (nOnlyReprogramBIOS == 1)
   {
     FDDWriteINT1Eh();
-    
-    printf("\n");
     Quit(EXIT_SUCCESS);
   }
   
@@ -461,8 +458,7 @@ void DoOperations()
     FDDSeek(76, 0);
     delay(500);
     FDDCalibrate();
-    
-    printf("\n");
+
     Quit(EXIT_SUCCESS);
   }
   
@@ -579,7 +575,7 @@ void DoOperations()
       
       if (nNoCreateFilesystem == 0)
       {
-        printf("Skipping filesystem creation.\nTo force it, run 8FORMAT without /V.");
+        printf("Skipping filesystem creation. To force it, run 8FORMAT without /V.");
         nNoCreateFilesystem = 1;
       }
       
@@ -591,33 +587,26 @@ void DoOperations()
 
   // Write FAT12
   if (nNoCreateFilesystem == 0)
-  {
-    unsigned char nScanCode = 0;
-    
+  {   
     printf("Creating file system...\n");
     WriteFAT12();
-    
-    // Ask to update the BIOS INT 1Eh diskette parameter table, if sector size wasn't 512B    
-    if (nPhysicalSectorSize != 512)
-    {
-      printf("Finished, with a nonstandard physical sector size that the BIOS might not read.\n"
-             "Apply a new BIOS Diskette Parameter Table (DPT) to reflect the new sector size?\n"
-             "Warning: After that, other floppy drives might not work until you reboot.\n"
-             "ENTER: continue, ESC: skip.\n");
-    
-      nScanCode = WaitEnterOrEscape();
-
-      // Update BIOS floppy parameter table
-      if (nScanCode == 0x1C)
-      {
-        printf("\n");
-        FDDWriteINT1Eh();
-      }
-
-      Quit(EXIT_SUCCESS);
-    }
   }
   
-  printf("Finished.\n");  
+  printf("Finished.\n\n");
+  FDDHeadRetract();
+  
+  // Ask to update the BIOS INT 1Eh diskette parameter table  
+  printf("Apply a new BIOS Diskette Parameter Table (DPT) to reflect the new 8\" geometry?\n"
+         "The BIOS/DOS will then try to use the new sector size, sector and track counts.\n"
+         "Be warned that other floppy drives will not work until you reboot.\n"
+         "Do not proceed if you run 8FORMAT from an another floppy drive.\n"
+         "ENTER: continue, ESC: skip.\n");
+
+  // Update BIOS floppy parameter table
+  if (WaitEnterOrEscape() == 0x1C)
+  {
+    FDDWriteINT1Eh();
+  }
+
   Quit(EXIT_SUCCESS);
 }

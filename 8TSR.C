@@ -34,6 +34,9 @@ unsigned char far* pEOT = NULL;
 unsigned char far* pGapLength = NULL;
 unsigned char far* pDTL = NULL;
 unsigned char far* pGap3Length = NULL;
+unsigned char far* pSpecifyHUT = NULL;
+unsigned char far* pSpecifyHLT = NULL;
+unsigned char far* pSpecifyIdleTime = NULL;
 
 // Data obtained from the command line
 // Unfortunately, these must be uppercase as they are linked together with extrn 8TSR.ASM
@@ -188,6 +191,9 @@ void interrupt TimerInterrupt()
   *pGapLength = nNewGapLength;
   *pDTL = nNewDTL;
   *pGap3Length = nNewGap3Length;
+  *pSpecifyHUT = 0xc7;
+  *pSpecifyHLT = 0x7e;
+  *pSpecifyIdleTime = 0xc8;
   asm sti
 
   // Continue with the ISR cascade
@@ -213,6 +219,10 @@ int main(int argc, char* argv[])
     UnloadTSR();
   }
   
+  // Clear the screen  
+  asm mov ax,3
+  asm int 10h
+  
   // Did 8FORMAT run from a floppy?
   if (RunsFromFloppy() == 1)
   {
@@ -234,15 +244,28 @@ int main(int argc, char* argv[])
   nNewGap3Length = (unsigned char)atoi(argv[8]);
   
   // Write new data into the DPT table
-  printf("BIOS INT 1Eh global diskette parameters table for all drives:\n");
+  printf("New BIOS INT 1Eh diskette parameters table (DPT) for all drives:\n\n");
+  
+  pSpecifyHUT = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+0);
+  printf("Step rate time:      was %u ms, now 8 ms\n", 32-(((unsigned int)(*pSpecifyHUT) >> 4) * 2));
+  printf("Head unload time:    was %u ms, now 224 ms\n", ((unsigned int)(*pSpecifyHUT) & 0xf) * 32);
+  *pSpecifyHUT = 0xc7;
+  
+  pSpecifyHLT = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+1);
+  printf("Head load time:      was %u ms, now 252 ms\n", ((unsigned int)(*pSpecifyHLT) >> 1) * 4);  
+  *pSpecifyHLT = 0x7e;
+  
+  pSpecifyIdleTime = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+2);
+  printf("Maximum idle time:   was %u ms, now 11000 ms\n", (unsigned int)(*pSpecifyIdleTime) * 55);  
+  *pSpecifyIdleTime = 0xc8;
   
   pSectorSize = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+3);
-  printf("Sector size byte:    was %u", *pSectorSize);
+  printf("Sector size byte:    was %u (%u bytes/sector)", *pSectorSize, pow2(7+(*pSectorSize)));
   *pSectorSize = nNewSectorSize;
-  printf(", now %u (%u bytes per sector)\n", *pSectorSize, pow2(7+(*pSectorSize)));  
+  printf(", now %u (%u bytes/sector)\n", *pSectorSize, pow2(7+(*pSectorSize)));
   
   pEOT = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+4);
-  printf("EOT (sectors/track): was %u", *pEOT);
+  printf("Sectors per track:   was %u", *pEOT);
   *pEOT = NNEWEOT;
   printf(", now %u\n", *pEOT);
   
@@ -251,16 +274,16 @@ int main(int argc, char* argv[])
   *pGapLength = nNewGapLength;
   printf(", now 0x%02X\n", *pGapLength);
   
-  pDTL = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+6);
-  printf("DTL (transfer len):  was 0x%02X", *pDTL);
-  *pDTL = nNewDTL;
-  printf(", now 0x%02X\n", *pDTL);
-
   pGap3Length = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+7);
   printf("Format gap length:   was 0x%02X", *pGap3Length);  
   *pGap3Length = nNewGap3Length;
   printf(", now 0x%02X\n", *pGap3Length);
   
+  pDTL = (unsigned char far*)MK_FP(*pDPTSegment, (*pDPTOffset)+6);
+  printf("DTL (transfer len):  was 0x%02X", *pDTL);
+  *pDTL = nNewDTL;
+  printf(", now 0x%02X\n", *pDTL);
+    
   // Reset floppies
   _asm {
     mov cx,4
@@ -302,6 +325,8 @@ blip:
   nTopSS = _SS;
   nTopSP = _SP;
   asm sti
+  
+  printf("\n8-inch drive mechanical parameters successfully applied.\n");
   
   // Terminate and stay resident, exitcode 0 + specify allocated resident memory space
   // PSP: starting address of the program

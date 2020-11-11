@@ -152,7 +152,7 @@ void PrepareBPB()
     *pSectorsPerCluster = 1;
     *pReservedSectors = 1;
     *pMediaDescriptor = 0xf9;
-    *pSectorsPerFAT = 2;
+    *pSectorsPerFAT = 7;
   }
   
   // 1.0MB EXT2, EXT2 /1
@@ -160,17 +160,17 @@ void PrepareBPB()
   {
     *pSectorsPerCluster = 2;
     *pReservedSectors = 2;
-    *pMediaDescriptor = 0xfe;
+    *pMediaDescriptor = 0xf0;
     *pSectorsPerFAT = 4;
   }
   
-  // 616kB EXT3, EXT3 /1
+  // 693kB EXT3, EXT3 /1
   else
   {
     *pSectorsPerCluster = 2;
     *pReservedSectors = 1;
-    *pMediaDescriptor = 0xfb;
-    *pSectorsPerFAT = 2;
+    *pMediaDescriptor = 0xf9;
+    *pSectorsPerFAT = 3;
   }
   
   // Compute the maximum number of 32-byte root directory entries
@@ -181,6 +181,12 @@ void PrepareBPB()
   nSectorsPerFAT = *pSectorsPerFAT;
   nBytesPerCluster = *pSectorsPerCluster * nLogicalSectorSize;
   nTotalDiskCapacity = (unsigned long)(*pTotalSectors) * nLogicalSectorSize;
+  
+  // 0xf0 "Superfloppy" media descriptor if /512PH was used
+  if (nPhysicalSectorSize != nLogicalSectorSize)
+  {
+    *pMediaDescriptor = 0xf0;
+  }
   
   // Change FAT ID to media descriptor from BPB
   sFATSignature[0] = *pMediaDescriptor;

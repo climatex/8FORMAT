@@ -1,5 +1,6 @@
 // Read first 4 sectors of track 0 to check 8ISR applied sector size
 // 1KB buffer filler byte 0xCC for unused/unread data
+// Memory model: TINY
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +9,7 @@
 #include <string.h>
 
 unsigned char nDriveNumber = 0;
-const unsigned char nSectorInfo[] = "\n%s likely contains %s";
+const unsigned char nSectorInfo[] = "\nTrack 0, sector %u likely contains %s";
 
 void ReadSector(unsigned char nSector)
 {
@@ -59,26 +60,33 @@ void ReadSector(unsigned char nSector)
 
   if ((pBuffer[0] == 0xCC) && (pBuffer[1023] == 0xCC))
   {
-    printf(nSectorInfo, sFileName, "no valid data");
+    printf(nSectorInfo, nSector, "no valid data");
   }
   else if (pBuffer[128] == 0xCC)
   {
-    printf(nSectorInfo, sFileName, "a 128-byte sector");
+    printf(nSectorInfo, nSector, "a 128-byte sector");
+    printf(" (%s)", sFileName);
+    fwrite(pBuffer, 128, 1, pFile);
   }
   else if (pBuffer[256] == 0xCC)
   {
-    printf(nSectorInfo, sFileName, "a 256-byte sector");
+    printf(nSectorInfo, nSector, "a 256-byte sector");
+    printf(" (%s)", sFileName);
+    fwrite(pBuffer, 256, 1, pFile);
   }
   else if (pBuffer[512] == 0xCC)
   {
-    printf(nSectorInfo, sFileName, "a 512-byte sector");
+    printf(nSectorInfo, nSector, "a 512-byte sector");
+    printf(" (%s)", sFileName);
+    fwrite(pBuffer, 512, 1, pFile);
   }
   else
   {
-    printf(nSectorInfo, sFileName, "a 1024-byte sector");
+    printf(nSectorInfo, nSector, "a 1024-byte sector");
+    printf(" (%s)", sFileName);
+    fwrite(pBuffer, 1024, 1, pFile);
   }
 
-  fwrite(pBuffer, 1024, 1, pFile);  
   fclose(pFile);
   free(pBuffer);
 }
