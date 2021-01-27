@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dos.h>
+#include <dir.h>
 
 #include "8format.h"
 #include "8floppy.h"
@@ -42,11 +43,11 @@ void Quit(int nStatus)
   
   // Execute 8TSR if need be
   if (strlen(sLaunch8TSR) > 0)
-  {
-    unsigned nFileAttributes;
-
+  {   
     // 8TSR.EXE must exist
-    if (_dos_getfileattr("8tsr.exe", &nFileAttributes) == 0)
+    char* pSearchPath = searchpath("8tsr.exe");
+    
+    if (pSearchPath != NULL)
     {
       system(sLaunch8TSR);
     }
@@ -83,9 +84,9 @@ void PrintSplash()
 // Printed on incorrect or no command line arguments
 void PrintUsage()
 {
-  printf("\nUsage:\n"
-         "8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/FAT12] [/Q]\n"
-         "                [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len]\n\n"
+  printf("\nUse either 8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/FAT12] [/Q]\n"
+         "                           [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len]\n"
+         "        or 8FORMAT /USE TYPE [/1] [/G len] [/G3 len], where:\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
          " TYPE   sets geometry, density (bitrate, data encoding) & physical sector size:\n"
          "        DSSD: 500kB 2-sided, single-density (250 kbps  FM), 26  128B sectors,\n"
@@ -93,6 +94,8 @@ void PrintUsage()
          "        EXT1: 1.2MB 2-sided, double-density (500 kbps MFM), 16  512B sectors,\n"
          "        EXT2: 1.0MB 2-sided, double-density (500 kbps MFM), 26  256B sectors,\n"         
          "        EXT3: 693kB 2-sided, mix-up-density (250 kbps MFM),  9  512B sectors.\n"
+         " /USE   for BIOS to use new Diskette Parameter Table for given TYPE geometry.\n"
+         "        Applied for ALL floppy drives until reboot. Disk stays untouched.\n"
          " /1     (optional): Single-sided format for the chosen TYPE. Capacity halved.\n"
          " /V     (optional): Format and verify. MUCH slower.\n"         
          " /500K  (optional): Use 500 kbps data bitrate (with types DSSD or EXT3).\n"
@@ -126,9 +129,9 @@ void ParseCommandLine(int argc, char* argv[])
     // Determine drive letter
     if (indexArgs == 1)
     {
-      // ! UNDOCUMENTED: Only update the global BIOS Diskette Parameter Table, /DPT
-      // Requires TYPE and optional /512PH, /G, /G3
-      if (strcmp(pArgument, "/DPT") == 0)
+      // Only update the global BIOS Diskette Parameter Table, /USE TYPE
+      // Optional: /G, /G3, /512PH (UNDOCUMENTED)
+      if (strcmp(pArgument, "/USE") == 0)
       {
         nOnlyReprogramBIOS = 1;
         continue;
@@ -441,7 +444,7 @@ void AskToContinue()
 
 void DoOperations()
 {    
-  // UNDOCUMENTED: Only reprogram the BIOS floppy geometry ?
+  // Only reprogram the BIOS floppy geometry ?
   if (nOnlyReprogramBIOS == 1)
   {
     FDDWriteINT1Eh();
