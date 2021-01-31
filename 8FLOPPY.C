@@ -767,13 +767,13 @@ void FDDRead(unsigned char nSectorNo)
   // Format error message for single sector/whole track operation
   if (nSectorNo != 0xff)
   {
-    printf("\Read of track %u, head %u, sector %u failed after 3 attempts.\n",
+    printf("\nRead of track %u, head %u, sector %u failed after 3 attempts.\n",
            nCurrentTrack, nCurrentHead, nSectorNo);
   }
   
   else
   {
-    printf("\Read of track %u on head %u failed after 3 attempts.\n",
+    printf("\nRead of track %u on head %u failed after 3 attempts.\n",
            nCurrentTrack, nCurrentHead);
   }
 
