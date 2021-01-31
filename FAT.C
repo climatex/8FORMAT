@@ -373,8 +373,8 @@ void DisplayDiskInformation()
 
 void WriteFAT12()
 {     
-  // Clear the 1K DMA buffer
-  memset(pDMABuffer, 0, 1024);
+  // Clear the 8K DMA buffer
+  memset(pDMABuffer, 0, 8*1024);
   
   // Write FAT12 bootsector 
   WriteBootCode();

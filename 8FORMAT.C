@@ -130,7 +130,7 @@ void ParseCommandLine(int argc, char* argv[])
     if (indexArgs == 1)
     {
       // Only update the global BIOS Diskette Parameter Table, /USE TYPE
-      // Optional: /G, /G3, /512PH (UNDOCUMENTED)
+      // Optional: /1, /G, /G3, /512PH (UNDOCUMENTED)
       if (strcmp(pArgument, "/USE") == 0)
       {
         nOnlyReprogramBIOS = 1;
@@ -398,14 +398,14 @@ void ParseCommandLine(int argc, char* argv[])
   // FAT on a non-standard physical sector size
   if ((nNoCreateFilesystem == 0) && (nPhysicalSectorSize != 512))
   {
-    printf("\nWarning: non-standard physical sector size for a FAT12 floppy (%u bytes).\n"
+    printf("\nWARNING: non-standard physical sector size for a FAT12 floppy (%u bytes).\n"
            "The disk might not be DOS-accessible.\n", nPhysicalSectorSize);
   }
   
   // FAT on a non-standard 512B geometry
   if ((nNoCreateFilesystem == 0) && (nForce512Physical == 1))
   {
-    printf("\nWarning: non-standard 512B sector geometry for a FAT12 floppy.\n"
+    printf("\nWARNING: non-standard 512B sector geometry for a FAT12 floppy.\n"
            "Using FAT media ID 0xf0, the disk might not be universally accessible however.\n");
   }
 }
@@ -506,14 +506,13 @@ void DoOperations()
     unsigned char nHeadIndex = 0;
     unsigned int nBadsOccurence = 0;
     
+    randomize();
     printf("Formatting...\n");
     
     for (; nTrackIndex < nTracks; nTrackIndex++)
     {
       while (nHeadIndex != nHeads)
-      {
-        unsigned char nVerifyResult;
-        
+      {       
         printf("\rHead: %u Track: %u  ", nHeadIndex, nTrackIndex);        
         FDDSeek(nTrackIndex, nHeadIndex);
         
@@ -522,49 +521,47 @@ void DoOperations()
         {
           printf("\r");
           FDDFormat();
-          
-          nHeadIndex++;
-          continue;
-        }        
-        
-        // Simple format with verify: write and read the first and last sectors on track   
-        printf(" Format");
-        FDDFormat(); //Whole track at once
-        
-        // Write 0xAA's on the first and last sectors
-        printf(" Write");
-        memset(pDMABuffer, 0xaa, nPhysicalSectorSize);
-        FDDWrite(1);
-        FDDWrite(nSectorsPerTrack);
-        
-        // Read the sectors. Compare the last byte of each to check for 0xAA
-        printf(" Verify");
-        FDDRead(1);
-        nVerifyResult = pDMABuffer[nPhysicalSectorSize-1] == 0xAA;
-        
-        if (nVerifyResult == 1)
-        {
-          FDDRead(nSectorsPerTrack);
-          nVerifyResult = pDMABuffer[nPhysicalSectorSize-1] == 0xAA;
-        }
-                
-        // Check the result
-        if (nVerifyResult != 1)
-        {
-          printf(" - did not format correctly\n");
-          nBadsOccurence++;
         }
         
-        // If passed, write the 0xF6 format byte back again to those 2 sectors.
         else
         {
-          memset(pDMABuffer, nFormatByte, nPhysicalSectorSize);
-          FDDWrite(1);
-          FDDWrite(nSectorsPerTrack);        
+          // Format with verify
+          unsigned char nVerifyResult;
+          unsigned char nRandomIndex;
+          const unsigned char nTestWriteByte = (unsigned char)random(256);
           
-          DelLine();
+          printf(" Format");
+          FDDFormat(); //Whole track at once
+          
+          // Write random byte on all sectors on track
+          printf(" Write");
+          memset(pDMABuffer, nTestWriteByte, nPhysicalSectorSize*nSectorsPerTrack);
+          FDDWrite(0xff); //whole track
+          
+          // Read the sectors. Compare the last byte of each (sector buffer is filled with nTestWriteByte)
+          printf(" Verify");
+          memset(pDMABuffer, 0, nPhysicalSectorSize*nSectorsPerTrack);
+          FDDRead(0xff); //whole track
+          
+          nRandomIndex = random(nPhysicalSectorSize*nSectorsPerTrack); //Random buffer position
+          nVerifyResult = pDMABuffer[nRandomIndex] == nTestWriteByte; //Verify buffer contents
+          
+          if (nVerifyResult != 1)
+          {
+            printf(" - did not format correctly\n");
+            nBadsOccurence++;
+          }
+          
+          // Verify success
+          else
+          {
+            DelLine();
+            
+            // Format the track again
+            FDDFormat();
+          }        
         }
-        
+
         nHeadIndex++;
       }
 
@@ -574,11 +571,11 @@ void DoOperations()
     // Skip creation of filesystem if any bad occurences were found during verify
     if (nBadsOccurence > 0)
     {
-      printf("\n\nA total of %d tracks failed to format properly. ", nBadsOccurence);
+      printf("\n\nA total of %d tracks failed to format properly.", nBadsOccurence);
       
       if (nNoCreateFilesystem == 0)
       {
-        printf("Skipping filesystem creation. To force it, run 8FORMAT without /V.");
+        printf("\nSkipping filesystem creation. To force it, run 8FORMAT without /V.");
         nNoCreateFilesystem = 1;
       }
       

@@ -4,7 +4,7 @@
 #include "8format.h"
 #include "isadma.h"
 
-unsigned char* pDMABuffer = NULL; //Public pointer to the 1K DMA buffer
+unsigned char* pDMABuffer = NULL; //Public pointer to the 8K DMA buffer
 unsigned char* pDMABufferPrivate = NULL; //Our private pointer to an xK DMA buffer
 
 unsigned int  nDMATransferLength = 0; // length of transfer in bytes, minus one
@@ -12,7 +12,8 @@ unsigned long nDMAAddress = 0;  //physical address
 
 void InitializeDMABuffer()
 {
-  unsigned int nSize = 0;
+  // Allocate 8K DMA buffer
+  unsigned int nSize = 7*1024;
   
   // For computing physical address in the 16bit segmentation model
   unsigned long nDataSegment = (unsigned long)_DS << 4;
@@ -20,7 +21,7 @@ void InitializeDMABuffer()
   // Initialize 64K boundary aligned DMA buffer  
   for(;;)
   {            
-    // We only need 1K
+    // 1K increments
     nSize += 1024;
     
     // Was the buffer already allocated beforehand?
@@ -31,7 +32,7 @@ void InitializeDMABuffer()
     
     // Allocate buffer    
     pDMABufferPrivate = (unsigned char*)malloc(nSize);    
-    if (pDMABufferPrivate == NULL)
+    if ((pDMABufferPrivate == NULL) || (nSize == 64512))
     {
       printf("\nNot enough memory or 64K-boundary problem\n");
       Quit(EXIT_FAILURE);
@@ -54,7 +55,7 @@ void InitializeDMABuffer()
     // Check for 64K boundary crossing of the address alone && address+bufsize (1024B)
     if ((nDMAAddress >> 16) == ((nDMAAddress+1024) >> 16))
     {
-      // It doesn't cross - we're all set. Set the public 1K DMA buffer pointer
+      // It doesn't cross - we're all set. Set the public 8K DMA buffer pointer
       pDMABuffer = (unsigned char*)(nDMAAddress - nDataSegment);
       break;      
     }

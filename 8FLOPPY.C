@@ -568,8 +568,8 @@ void FDDFormat()
 { 
   unsigned char nIdx;
     
-  // Clear 1K DMA buffer
-  memset(pDMABuffer, 0, 1024);
+  // Clear 8K DMA buffer
+  memset(pDMABuffer, 0, 8*1024);
 
   // Three retries
   for (nIdx = 0; nIdx < 3; nIdx++)
@@ -628,9 +628,9 @@ void FDDFormat()
   Quit(EXIT_FAILURE);
 }
 
-// Writes a single sector on the active (seeked) track and head number
-// Input: pre-set DMA buffer (with a max size of 1 sector)
-//        sector number (1-based !)
+// Writes either a single sector on the active (seeked) track and head number, or whole track
+// Input: pre-set DMA buffer with proper size
+//        sector number (1-based !), or 255 (0xff) for whole track
 void FDDWrite(unsigned char nSectorNo)
 { 
   unsigned char nIdx;
@@ -643,16 +643,18 @@ void FDDWrite(unsigned char nSectorNo)
     unsigned char nST2;
     
     // Setup DMA
-    PrepareDMABufferForTransfer(0, nPhysicalSectorSize);
+    PrepareDMABufferForTransfer(0, (nSectorNo != 0xff) ? 
+                                   nPhysicalSectorSize : 
+                                   nPhysicalSectorSize*nSectorsPerTrack);
    
     // Now send command    
     FDDSendCommand(0x45); //0x45 Write sector
     FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
     FDDSendData(nCurrentTrack); //currently seeked track and head
     FDDSendData(nCurrentHead); //lol redundant but needed
-    FDDSendData(nSectorNo); //Which sector to write
+    FDDSendData((nSectorNo != 0xff) ? nSectorNo : 1); //Which sector to write, or whole track from sector 1
     FDDSendData(ConvertSectorSize(nPhysicalSectorSize)); //Sector size, 0 to 3
-    FDDSendData(nSectorNo); //Write only one sector
+    FDDSendData((nSectorNo != 0xff) ? nSectorNo : nSectorsPerTrack); //Write only one sector or whole track
     FDDSendData(GetGapLength(0)); //Gap length
     FDDSendData((nPhysicalSectorSize == 128) ? (unsigned char)nPhysicalSectorSize : 0xff); //Data transfer length
       
@@ -678,9 +680,20 @@ void FDDWrite(unsigned char nSectorNo)
     // Errors detected - next attempt
     printf("\n");
   }
-
-  printf("\nWrite operation of track %u, head %u, sector %u failed after 3 attempts.\n",
-         nCurrentTrack, nCurrentHead, nSectorNo);
+  
+  // Format error message for single sector/whole track operation
+  if (nSectorNo != 0xff)
+  {
+    printf("\nWrite operation of track %u, head %u, sector %u failed after 3 attempts.\n",
+           nCurrentTrack, nCurrentHead, nSectorNo);
+  }
+  
+  else
+  {
+    printf("\nWrite operation of track %u on head %u failed after 3 attempts.\n",
+           nCurrentTrack, nCurrentHead);
+  }
+  
   Quit(EXIT_FAILURE);
 }
 
@@ -696,14 +709,14 @@ void FDDWriteINT1Eh()
                        GetGapLength(0), ((nPhysicalSectorSize == 128) ? 0x80 : 0xff), GetGapLength(1));
 }
 
-// Reads a single sector from the active (seeked) track and head number
-// Input: sector number (1-based !)
+// Reads either a single sector from the active (seeked) track and head number, or whole track
+// Input: sector number (1-based !), or 255 (0xff) for whole track
 void FDDRead(unsigned char nSectorNo)
 { 
   unsigned char nIdx;
   
-  // Clear 1K DMA buffer
-  memset(pDMABuffer, 0, 1024);
+  // Clear 8K DMA buffer
+  memset(pDMABuffer, 0, 8*1024);
    
   // Three read retries
   for (nIdx = 0; nIdx < 3; nIdx++)
@@ -713,16 +726,18 @@ void FDDRead(unsigned char nSectorNo)
     unsigned char nST2;
     
     // Setup DMA
-    PrepareDMABufferForTransfer(1, nPhysicalSectorSize);
-   
+    PrepareDMABufferForTransfer(1, (nSectorNo != 0xff) ? 
+                                   nPhysicalSectorSize : 
+                                   nPhysicalSectorSize*nSectorsPerTrack);
+       
     // Now send command    
     FDDSendCommand(0x46); //0x46 Read sector
     FDDSendData((nCurrentHead << 2) | nDriveNumber); //Which drive and head
     FDDSendData(nCurrentTrack); //currently seeked track and head
     FDDSendData(nCurrentHead); //lol redundant but needed
-    FDDSendData(nSectorNo); //Which sector to read
+    FDDSendData((nSectorNo != 0xff) ? nSectorNo : 1); //Which sector to read, or whole track from sector 1
     FDDSendData(ConvertSectorSize(nPhysicalSectorSize)); //Sector size, 0 to 3
-    FDDSendData(nSectorNo); //Read only one sector
+    FDDSendData((nSectorNo != 0xff) ? nSectorNo : nSectorsPerTrack); //Read only one sector or whole track
     FDDSendData(GetGapLength(0)); //Gap length
     FDDSendData((nPhysicalSectorSize == 128) ? (unsigned char)nPhysicalSectorSize : 0xff); //Data transfer length
       
@@ -748,8 +763,19 @@ void FDDRead(unsigned char nSectorNo)
     // Errors detected - next attempt
     printf("\n");
   }
+  
+  // Format error message for single sector/whole track operation
+  if (nSectorNo != 0xff)
+  {
+    printf("\Read of track %u, head %u, sector %u failed after 3 attempts.\n",
+           nCurrentTrack, nCurrentHead, nSectorNo);
+  }
+  
+  else
+  {
+    printf("\Read of track %u on head %u failed after 3 attempts.\n",
+           nCurrentTrack, nCurrentHead);
+  }
 
-  printf("\nRead of track %u, head %u, sector %u failed after 3 attempts.\n",
-         nCurrentTrack, nCurrentHead, nSectorNo);
   Quit(EXIT_FAILURE);
 }
