@@ -152,6 +152,50 @@ void UpdateTSR()
   exit(0);
 }
 
+// Determine where the DPT is located and copy it to a writable place in memory if need be.
+unsigned char RelocateDPT()
+{
+  unsigned int nDPTSeg = *pDPTSegment;
+  unsigned int nDPTOfs = *pDPTOffset;
+  
+  unsigned long nDPTLocation = ((unsigned long)nDPTSeg << 4) + nDPTOfs;  
+  if (nDPTLocation < 640L*1024L)
+  {
+_fail:
+    return 0; // OK, under 640K (or memory allocation fail)
+  }
+  
+  // Needs relocation  
+  // Allocate a DOS segment for a copy of the 11byte DPT: one 16byte paragraph
+  asm mov ah,48h
+  asm mov bx,1
+  asm int 21h
+  asm jc _fail
+  
+  // Copy old DPT to the new memory location in AX:0000, and update nDPTSeg:nDPTOfs
+  asm push ds
+  asm push es
+  asm push ax
+  asm mov si,[nDPTOfs]
+  asm mov ax,[nDPTSeg]
+  asm mov ds,ax
+  asm pop ax
+  asm mov es,ax
+  asm mov [nDPTSeg],ax
+  asm xor di,di
+  asm mov [nDPTOfs],di
+  asm mov cx,0Bh
+  asm rep movsb
+  asm pop es
+  asm pop ds
+  
+  // Point to new memory location
+  *pDPTSegment = nDPTSeg; //AX from INT 21h
+  *pDPTOffset = nDPTOfs;  //0
+  
+  return 1;
+}
+
 // New INT 8 - timer interrupt. Just attempt to sync the DPT with what we have set fix.
 // Regardless of whoever, or whatever, might have changed it... and then call it a day
 void interrupt TimerInterrupt()
@@ -173,6 +217,8 @@ void interrupt TimerInterrupt()
 
 int main(int argc, char* argv[])
 {
+  unsigned char nRelocationResult = 0;
+  
   // Executed manually without proper arguments
   if (argc != 9)
   {
@@ -194,6 +240,9 @@ int main(int argc, char* argv[])
            "8FORMAT ran from a floppy itself, and the choice was to update the BIOS DPT.\n"
            "Any subsequent 5.25\" or 3.5\" floppy access may fail, or cause data corruption.\n\n");
   }
+  
+  // Is the DPT somewhere over 640K (e.g. in BIOS)?
+  nRelocationResult = RelocateDPT();
    
   // Obtain values from the command line
   // 8TSR drivenumber tracks heads sectorspertrack sectorsize EOT RWgap DTL GAP3
@@ -262,6 +311,10 @@ blip:
   }
   
   printf("\n8-inch drive mechanical parameters successfully applied.\n");
+  if (nRelocationResult == 1)
+  {
+    printf("NOTE: the original DPT was readonly - relocated to segment 0x%04X.\n", *pDPTSegment);
+  }
   
   // TSR already installed? Update the resident data then
   UpdateTSR();
