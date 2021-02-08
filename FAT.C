@@ -152,7 +152,7 @@ void PrepareBPB()
     *pSectorsPerCluster = 1;
     *pReservedSectors = 1;
     *pMediaDescriptor = 0xf9;
-    *pSectorsPerFAT = 7;
+    *pSectorsPerFAT = 8;
   }
   
   // 1.0MB EXT2, EXT2 /1
@@ -170,7 +170,7 @@ void PrepareBPB()
     *pSectorsPerCluster = 2;
     *pReservedSectors = 1;
     *pMediaDescriptor = 0xf9;
-    *pSectorsPerFAT = 3;
+    *pSectorsPerFAT = 4;
   }
   
   // Compute the maximum number of 32-byte root directory entries

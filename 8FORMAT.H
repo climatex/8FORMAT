@@ -20,7 +20,7 @@ extern unsigned char nOnlyRecalibrateFDD;
 extern unsigned char nUseIRQ;
 extern unsigned char nUseDMA;
 extern unsigned int  nDataRateKbps;
-extern unsigned char sLaunch8TSR[255];
+extern unsigned char nLaunch8TSR;
 extern unsigned char sFormatType[5];
 extern unsigned char nFormatByte;
 

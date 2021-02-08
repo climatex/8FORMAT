@@ -14,6 +14,6 @@ void FDDFormat();
 void FDDWrite(unsigned char);
 void FDDRead(unsigned char);
 
-void FDDWriteINT1Eh();
+void FDDWriteINT1Eh(unsigned char*);
 
 #endif

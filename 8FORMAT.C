@@ -27,7 +27,7 @@ unsigned char nOnlyRecalibrateFDD = 0;
 unsigned char nUseIRQ = 6;
 unsigned char nUseDMA = 2;
 unsigned int  nDataRateKbps = 500;
-unsigned char sLaunch8TSR[255] = {0};
+unsigned char nLaunch8TSR = 0;
 unsigned char sFormatType[5] = {0};
 unsigned char nFormatByte = 0xF6;
 
@@ -41,21 +41,31 @@ void Quit(int nStatus)
   // Important before passing control to DOS
   FDDResetBIOS();
   
-  // Execute 8TSR if need be
-  if (strlen(sLaunch8TSR) > 0)
+  // EXEC 8TSR if need be
+  if (nLaunch8TSR == 1)
   {   
     // 8TSR.EXE must exist
     char* pSearchPath = searchpath("8tsr.exe");
     
-    if (pSearchPath != NULL)
-    {
-      system(sLaunch8TSR);
-    }
-    
-    else
+    // Not in current directory, not in PATH
+    if (pSearchPath == NULL)
     {
       printf("\n8TSR.EXE not found, cannot set the BIOS diskette parameter table.\n");
     }
+    
+    // Nested too much in 255byte PATH?
+    else if (strlen(pSearchPath) > 200)
+    {
+      printf("\n8TSR.EXE nested in too many subdirectories. Aborting.\n");
+    }
+    
+    // Overlay process
+    else
+    {     
+      FDDWriteINT1Eh(pSearchPath);
+    }
+    
+    printf("\nError launching 8TSR.EXE\n");
   }
   
   // Exit to OS
@@ -69,6 +79,18 @@ unsigned char IsPCXT()
   return (nPcByte > 0xfc) || (nPcByte == 0xfb);
 }
 
+// Discard crappy systems right off the bat
+void DetectMemory()
+{
+  asm int 0x12
+  
+  if (_AX < 256)
+  {
+    printf("\nNot enough memory\n");
+    Quit(EXIT_FAILURE);
+  }
+}
+
 // Redraw line
 void DelLine()
 {
@@ -79,6 +101,9 @@ void DelLine()
 void PrintSplash()
 {
   printf("8FORMAT - 8\" floppy format utility for DOS, (c) J. Bogin\n");
+  
+  // And quit rightaway :)
+  DetectMemory();
 }
 
 // Printed on incorrect or no command line arguments
@@ -447,7 +472,7 @@ void DoOperations()
   // Only reprogram the BIOS floppy geometry ?
   if (nOnlyReprogramBIOS == 1)
   {
-    FDDWriteINT1Eh();
+    FDDWriteINT1Eh(NULL);
     Quit(EXIT_SUCCESS);
   }
   
@@ -605,7 +630,7 @@ void DoOperations()
   // Update BIOS floppy parameter table
   if (WaitEnterOrEscape() == 0x1C)
   {
-    FDDWriteINT1Eh();
+    FDDWriteINT1Eh(NULL);
   }
 
   Quit(EXIT_SUCCESS);

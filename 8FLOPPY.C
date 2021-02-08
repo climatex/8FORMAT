@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <dos.h>
 #include <mem.h>
+#include <process.h>
 
 #include "8format.h"
 #include "isadma.h"
@@ -698,15 +699,32 @@ void FDDWrite(unsigned char nSectorNo)
 }
 
 // To update the INT 1Eh BIOS diskette parameter table, execute 8TSR.
-// Here, prepare the command line arguments; execute 8TSR just before the end.
-void FDDWriteINT1Eh()
+void FDDWriteINT1Eh(unsigned char* pPath)
 {  
-  // Command line arguments: 
-  // drivenumber tracks heads sectorsize EOT RWgap DTL GAP3
-  // All numbers are of BYTE length (decadic max. "255" - 3 bytes + \0)
-  sprintf(sLaunch8TSR, "8TSR %u %u %u %u %u %u %u %u",
-                       nDriveNumber, nTracks, nHeads, ConvertSectorSize(nPhysicalSectorSize), nSectorsPerTrack,
-                       GetGapLength(0), ((nPhysicalSectorSize == 128) ? 0x80 : 0xff), GetGapLength(1));
+  static unsigned char* pArguments[] = { NULL, "255", "255", "255", "255", "255", "255", "255", "255", NULL};
+    
+  // Here, just prepare the arguments to execute 8TSR just before the end in Quit()  
+  if (pPath == NULL)
+  {
+    // Command line arguments: 
+    // drivenumber tracks heads sectorsize EOT RWgap DTL GAP3
+    // All values decadic and unsigned char (0-255)
+    sprintf(pArguments[1], "%u", nDriveNumber);
+    sprintf(pArguments[2], "%u", nTracks);
+    sprintf(pArguments[3], "%u", nHeads);
+    sprintf(pArguments[4], "%u", ConvertSectorSize(nPhysicalSectorSize));
+    sprintf(pArguments[5], "%u", nSectorsPerTrack);
+    sprintf(pArguments[6], "%u", GetGapLength(0));
+    sprintf(pArguments[7], "%u", (nPhysicalSectorSize == 128) ? 0x80 : 0xff);
+    sprintf(pArguments[8], "%u", GetGapLength(1));
+    
+    nLaunch8TSR = 1;
+    return;
+  }
+    
+  // Overlay 8FORMAT with 8TSR. Called in Quit()
+  pArguments[0] = pPath;
+  execv(pPath, pArguments);
 }
 
 // Reads either a single sector from the active (seeked) track and head number, or whole track

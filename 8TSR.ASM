@@ -3,10 +3,15 @@
 .code
 
 public _DiskInterrupt
+public _TSRInterrupt
 
 extrn _NTRACKS:byte:far
-extrn _NNEWEOT:byte:far
 extrn _NHEADS:byte:far
+extrn _NNEWSECTORSIZE:byte:far
+extrn _NNEWEOT:byte:far
+extrn _NNEWGAPLENGTH:byte:far
+extrn _NNEWDTL:byte:far
+extrn _NNEWGAP3LENGTH:byte:far
 
 ; Overriden AH=8 (Get drive parameters),
 ;              17h (Set disk type for format),
@@ -73,5 +78,23 @@ set_media_format:
   clc
   jmp back2
 _DiskInterrupt endp
+
+
+
+; INT E8h Update TSR resident data
+; AX: tracks and heads, BX: sector size and spt, CX: gap length and DTL, DL: gap3 length
+_TSRInterrupt proc far
+  cli
+  mov [_NTRACKS],al
+  mov [_NHEADS],ah
+  mov [_NNEWSECTORSIZE],bl
+  mov [_NNEWEOT],bh
+  mov [_NNEWGAPLENGTH],cl
+  mov [_NNEWDTL],ch
+  mov [_NNEWGAP3LENGTH],dl
+  sti
+  iret
+_TSRInterrupt endp
+
 
 END
