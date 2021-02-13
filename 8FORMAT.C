@@ -244,6 +244,18 @@ void ParseCommandLine(int argc, char* argv[])
         nLogicalSectorSize = 512;
       }
       
+      // 1.3MB CRAM UNDOCUMENTED
+      else if (strcmp(pArgument, "CRAM") == 0)
+      {
+        nTracks = 78;
+        nSectorsPerTrack = 17;
+        nLogicalSectorsPerTrack = 17;
+        nPhysicalSectorSize = 512;
+        nLogicalSectorSize = 512;
+        nCustomGapLength = 16;
+        nCustomGap3Length = 32;
+      }
+      
       // Unrecognized
       else
       {

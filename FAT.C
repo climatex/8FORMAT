@@ -146,8 +146,8 @@ void PrepareBPB()
     *pSectorsPerFAT = 2;
   }
   
-  // 1.2MB EXT1, EXT1 /1
-  else if (strcmp(sFormatType, "EXT1") == 0)
+  // 1.2MB EXT1, EXT1 /1, 1.3MB CRAM UNDOCUMENTED
+  else if ((strcmp(sFormatType, "EXT1") == 0) || (strcmp(sFormatType, "CRAM") == 0))
   {
     *pSectorsPerCluster = 1;
     *pReservedSectors = 1;
