@@ -108,7 +108,7 @@ void PrintSplash()
 // Printed on incorrect or no command line arguments
 void PrintUsage()
 {
-  printf("\nUse either 8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/FAT12] [/Q]\n"
+  printf("\nUse either 8FORMAT X: TYPE [/1] [/V] [/MFM] [/FAT12] [/Q]\n"
          "                           [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len]\n"
          "        or 8FORMAT /USE TYPE [/1] [/G len] [/G3 len], where:\n\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
