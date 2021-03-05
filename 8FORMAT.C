@@ -26,7 +26,6 @@ unsigned char nOnlyReprogramBIOS = 0;
 unsigned char nOnlyRecalibrateFDD = 0;
 unsigned char nUseIRQ = 6;
 unsigned char nUseDMA = 2;
-unsigned int  nDataRateKbps = 500;
 unsigned char nLaunch8TSR = 0;
 unsigned char sFormatType[5] = {0};
 unsigned char nFormatByte = 0xF6;
@@ -111,20 +110,19 @@ void PrintUsage()
 {
   printf("\nUse either 8FORMAT X: TYPE [/1] [/V] [/500K] [/MFM] [/FAT12] [/Q]\n"
          "                           [/FDC port] [/IRQ num] [/DMA num] [/G len] [/G3 len]\n"
-         "        or 8FORMAT /USE TYPE [/1] [/G len] [/G3 len], where:\n"
+         "        or 8FORMAT /USE TYPE [/1] [/G len] [/G3 len], where:\n\n"
          " X:     the drive letter where the 77-track 8\" disk drive is installed; A to D,\n"
-         " TYPE   sets geometry, density (bitrate, data encoding) & physical sector size:\n"
-         "        DSSD: 500kB 2-sided, single-density (250 kbps  FM), 26  128B sectors,\n"
-         "        DSDD: 1.2MB 2-sided, double-density (500 kbps MFM),  8 1024B sectors,\n"
-         "        EXT1: 1.2MB 2-sided, double-density (500 kbps MFM), 16  512B sectors,\n"
-         "        EXT2: 1.0MB 2-sided, double-density (500 kbps MFM), 26  256B sectors,\n"         
-         "        EXT3: 693kB 2-sided, mix-up-density (250 kbps MFM),  9  512B sectors.\n"
+         " TYPE   sets geometry, density (data encoding) and physical sector size:\n"
+         "        DSSD: 500kB double-sided, single-density (FM),  26  128B sectors,\n"
+         "        DSDD: 1.2MB double-sided, double-density (MFM),  8 1024B sectors,\n"
+         "        EXT1: 1.2MB double-sided, double-density (MFM), 16  512B sectors,\n"
+         "        EXT2: 1.0MB double-sided, double-density (MFM), 26  256B sectors,\n"         
+         "        EXT3: 693kB double-sided, double-density (MFM),  9  512B sectors.\n"
          " /USE   for BIOS to use new Diskette Parameter Table for given TYPE geometry.\n"
          "        Applied for ALL floppy drives until reboot. Disk stays untouched.\n"
          " /1     (optional): Single-sided format for the chosen TYPE. Capacity halved.\n"
          " /V     (optional): Format and verify. MUCH slower.\n"         
-         " /500K  (optional): Use 500 kbps data bitrate (with types DSSD or EXT3).\n"
-         " /MFM   (optional): Use MFM data encoding (with type DSSD).\n"
+         " /MFM   (optional): Use MFM data encoding with type DSSD.\n"
          " /FAT12 (optional): Format and try writing the DOS boot sector and filesystem.\n"
          " /Q     (optional): Do not format, just write the boot sector and filesystem.\n"
          " /FDC   (optional): Use a different FD controller base hex port; default 0x3f0.\n"
@@ -199,7 +197,6 @@ void ParseCommandLine(int argc, char* argv[])
       // 500kB DSSD
       if (strcmp(pArgument, "DSSD") == 0)
       {
-        nDataRateKbps = 250;
         nUseFM = 1;
         nSectorsPerTrack = 26;
         nLogicalSectorsPerTrack = 26;
@@ -237,7 +234,6 @@ void ParseCommandLine(int argc, char* argv[])
       // 693kB EXT3
       else if (strcmp(pArgument, "EXT3") == 0)
       {
-        nDataRateKbps = 250;
         nSectorsPerTrack = 9;
         nLogicalSectorsPerTrack = 9;
         nPhysicalSectorSize = 512;
@@ -262,13 +258,7 @@ void ParseCommandLine(int argc, char* argv[])
         PrintUsage();
       }
     }
-    
-    // Force 500K data rate
-    else if (strcmp(pArgument, "/500K") == 0)
-    {
-      nDataRateKbps = 500;
-    }
-    
+        
     // Force MFM encoding
     else if (strcmp(pArgument, "/MFM") == 0)
     {
@@ -414,18 +404,14 @@ void ParseCommandLine(int argc, char* argv[])
   
   // Info or warning messages follow.
      
-  // Running on IBM PC/XT with 500kbps bitrate specified - just warn and run
-  if ((nDataRateKbps == 500) && (IsPCXT() == 1))
+  // Running on IBM PC/XT
+  if (IsPCXT() == 1)
   {
-    printf("\nPC/XT detected. Unless there's a special FDC, the bitrate is capped to 250kbps.\n");
+    printf("\nWARNING: IBM 5150 or XT detected. Unless there's a high-density capable FDC,"
+           "\n8\" floppy access won't work (500kHz clock rate%sis required).\n",
+           (nUseFM == 1) ? " with FM support " : " ");
   }
-  
-  // Running on IBM PC/XT with FM encoding specified - just warn and run
-  if ((nUseFM == 1) && (IsPCXT() == 1))
-  {
-    printf("\nPC/XT detected. Unless there's a special FDC, the encoding is always MFM.\n");
-  }
-   
+     
   // Custom FDC port, IRQ or DMA specified ?
   if ((nFDCBase != 0x3f0) || (nUseIRQ != 6) || (nUseDMA != 2))
   {
@@ -504,7 +490,7 @@ void DoOperations()
   
   // Inform about the drive geometry
   printf("\nUsing%s TYPE %s with the following physical geometry and parameters:\n"
-         "%u tracks, %u %s, %u %uB sectors, R/W gap 0x%02X, Gap3 0x%02X, %ukbps%s %s%s.\n\n",
+         "%u tracks, %u %s, %u %uB sectors, R/W gap 0x%02X, Gap3 0x%02X, 500kHz%s %s%s.\n\n",
          ((nPhysicalSectorSize != nLogicalSectorSize) && (nNoCreateFilesystem == 0)) ? " logical" : "",
          sFormatType,
          nTracks,
@@ -514,8 +500,7 @@ void DoOperations()
          nPhysicalSectorSize,
          GetGapLength(0),
          GetGapLength(1),
-         nDataRateKbps,
-         ((IsPCXT() == 1) && (nDataRateKbps > 250)) ? "(?)" : "",
+         (IsPCXT() == 1) ? "(?)" : "",
          (nUseFM == 1) ? "FM" : "MFM",
          ((IsPCXT() == 1) && (nUseFM == 1)) ? "(?)" : "");
   

@@ -342,16 +342,11 @@ void FDDReset()
     FDDGetData(); //current track, trashed
   }
   
-  if (nDataRateKbps == 500)
-  {
-    // Set 500 kbps data rate
-    outportb(nFDCBase + 7, 0);
-  }
-  else
-  {
-    // 250 kbps data rate (XT: no effect at all)
-    outportb(nFDCBase + 7, 2);
-  }  
+  // Always set the 500kbps FDC communication data rate, with 500kHz clock timing.
+  // Practical data rate on MFM (1 bit per 1 databit) is 500 kbps, and 250kbps on FM (2 bits per 1 databit)
+  // This does absolutely nothing on XT without a HD-capable FDC.
+  outportb(nFDCBase + 7, 0);
+
   delay(25);
 
   // 0x3 Fix drive data command - load new mechanical values
@@ -363,14 +358,14 @@ void FDDReset()
   // 8ms track-to-track step rate, 252ms head load time, 224ms unload time
   
   // First byte is SRT (upper nibble) | HUT (lower nibble)
-  // Step rate time (SRT): 8 ms (250kbps: 12 << 4, 500kbps: 8 << 4)
-  // Head unload time (HUT): 224 ms (250kbps: 7, 500kbps: 14)
-  FDDSendData((nDataRateKbps == 250) ? 0xc7 : 0x8e);
+  // Step rate time (SRT): 8 ms (500kbps FDC comm rate: 8 << 4)
+  // Head unload time (HUT): 224 ms (500kbps FDC comm rate: 14)
+  FDDSendData(0x8e);
   
   // Second byte is HLT (upper 7 bits) | non-DMA mode flag (bit 0)
-  // Head load time (HLT): 252 ms (250kbps: 63 << 1, 500kbps: 126 << 1)
+  // Head load time (HLT): 252 ms (500kbps FDC comm rate: 126 << 1)
   // Non-DMA mode: 0 (we use DMA)
-  FDDSendData((nDataRateKbps == 250) ? 0x7e : 0xfc);
+  FDDSendData(0xfc);
 }
 
 void FDDCalibrate()

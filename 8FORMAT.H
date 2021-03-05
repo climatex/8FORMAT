@@ -19,7 +19,6 @@ extern unsigned char nOnlyReprogramBIOS;
 extern unsigned char nOnlyRecalibrateFDD;
 extern unsigned char nUseIRQ;
 extern unsigned char nUseDMA;
-extern unsigned int  nDataRateKbps;
 extern unsigned char nLaunch8TSR;
 extern unsigned char sFormatType[5];
 extern unsigned char nFormatByte;
