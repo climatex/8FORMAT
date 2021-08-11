@@ -5,7 +5,7 @@
 #include "isadma.h"
 #include "8format.h"
 
-// JMP SHORT, nop and the BIOS parameter block. Drive geometry to be modified (5,25" 360K originally)
+/* JMP SHORT, nop and the BIOS parameter block. Drive geometry to be modified (5,25" 360K originally) */
 const unsigned char sBIOSParameterBlock[54] =
 {
     0xEB, 0x34, 0x90, 0x4D, 0x53, 0x44, 0x4F, 0x53, 0x33, 0x2E, 0x33, 0x00, 0x02, 0x02, 0x01, 0x00, 
@@ -14,7 +14,7 @@ const unsigned char sBIOSParameterBlock[54] =
     0x00, 0x00, 0x00, 0x00, 0x01, 0x00 
 };
 
-// 128byte bootstrapper (74 bytes, excl. the BPB) + separate 384 byte bootcode
+/* 128byte bootstrapper (74 bytes, excl. the BPB) + separate 384 byte bootcode */
 unsigned char s128ByteBootstrapper[458] =
 {
     0xFA, 0xFC, 0x31, 0xDB, 0x8E, 0xD3, 0xBC, 0x00, 0x7C, 0x0E, 0x1F, 0x1E, 0x07, 0xFB, 0xBE, 0x63, 
@@ -48,7 +48,7 @@ unsigned char s128ByteBootstrapper[458] =
     0x64, 0x20, 0x66, 0x61, 0x69, 0x6C, 0x00, 0x00, 0x55, 0xAA
 };
 
-// Regular "512byte"-compatible FAT12 boot code (to be put in a 512/1024B sector). Searches for IO.SYS/MSDOS.SYS
+/* Regular "512byte"-compatible FAT12 boot code (to be put in a 512/1024B sector). Searches for IO.SYS/MSDOS.SYS */
 const unsigned char sFAT12BootCode[439] =
 {
     0xFA, 0x33, 0xC0, 0x8E, 0xD0, 0xBC, 0x00, 0x7C, 0x16, 0x07, 0xBB, 0x78, 0x00, 0x36, 0xC5, 0x37, 
@@ -81,17 +81,17 @@ const unsigned char sFAT12BootCode[439] =
     0x20, 0x20, 0x20, 0x53, 0x59, 0x53, 0x00
 };
 
-// To be used from the BPB, locally
+/* To be used from the BPB, locally */
 unsigned int nReservedSectors = 0;
 unsigned int nRootDirEntries = 0;
 unsigned int nSectorsPerFAT = 0;
 unsigned int nBytesPerCluster = 0;
 
-// Total disk capacity and free space
+/* Total disk capacity and free space */
 unsigned long nTotalDiskCapacity = 0;
 unsigned long nTotalDiskSpace = 0;
 
-// FAT signature
+/* FAT signature */
 unsigned char sFATSignature[3] =
 {
     0xFE, 0xFF, 0xFF
@@ -99,7 +99,7 @@ unsigned char sFATSignature[3] =
 
 void PrepareBPB()
 {
-  // Initialize pointers to values that need to be redefined
+  /* Initialize pointers to values that need to be redefined */
   unsigned int* pBytesPerSector = (unsigned int*)(&(pDMABuffer)[0x0b]);
   unsigned char* pSectorsPerCluster = (unsigned char*)(&(pDMABuffer)[0x0d]);  
   unsigned int* pReservedSectors = (unsigned int*)(&(pDMABuffer)[0x0e]);
@@ -110,16 +110,16 @@ void PrepareBPB()
   unsigned int* pSectorsPerTrack = (unsigned int*)(&(pDMABuffer)[0x18]);
   unsigned int* pNumberOfHeads = (unsigned int*)(&(pDMABuffer)[0x1a]);
   
-  // Initialize with default values (5,25" 360K) and start defining the 8" geometry
+  /* Initialize with default values (5,25" 360K) and start defining the 8" geometry */
   memcpy(pDMABuffer, sBIOSParameterBlock, sizeof(sBIOSParameterBlock));
   
-  // Common values for 77-track 8"s
+  /* Common values for 77-track 8"s */
   *pNumberOfHeads = (unsigned int)nHeads; 
   *pSectorsPerTrack = (unsigned int)nSectorsPerTrack;
   *pBytesPerSector = nLogicalSectorSize;
   *pTotalSectors = (unsigned int)nLogicalSectorsPerTrack * nHeads * (unsigned int)nTracks;
   
-  // 250kB SSSD (TYPE DSSD /1)
+  /* 250kB SSSD (TYPE DSSD /1) */
   if ((strcmp(sFormatType, "DSSD") == 0) && (nHeads == 1))
   {
     *pSectorsPerCluster = 4;
@@ -128,7 +128,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 4;
   }
 
-  // 500kB TYPE DSSD
+  /* 500kB TYPE DSSD */
   else if ((strcmp(sFormatType, "DSSD") == 0) && (nHeads == 2))
   {
     *pSectorsPerCluster = 4;
@@ -137,7 +137,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 4;
   }
   
-  // 1.2MB TYPE DSDD, DSDD /1
+  /* 1.2MB TYPE DSDD, DSDD /1 */
   else if (strcmp(sFormatType, "DSDD") == 0)
   {
     *pSectorsPerCluster = 1;
@@ -146,7 +146,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 2;
   }
   
-  // 1.2MB EXT1, EXT1 /1, 1.3MB CRAM UNDOCUMENTED
+  /* 1.2MB EXT1, EXT1 /1, 1.3MB CRAM UNDOCUMENTED */
   else if ((strcmp(sFormatType, "EXT1") == 0) || (strcmp(sFormatType, "CRAM") == 0))
   {
     *pSectorsPerCluster = 1;
@@ -155,7 +155,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 8;
   }
   
-  // 1.0MB EXT2, EXT2 /1
+  /* 1.0MB EXT2, EXT2 /1 */
   else if (strcmp(sFormatType, "EXT2") == 0)
   {
     *pSectorsPerCluster = 2;
@@ -164,7 +164,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 4;
   }
   
-  // 693kB EXT3, EXT3 /1
+  /* 693kB EXT3, EXT3 /1 */
   else
   {
     *pSectorsPerCluster = 2;
@@ -173,7 +173,7 @@ void PrepareBPB()
     *pSectorsPerFAT = 4;
   }
   
-  // Compute the maximum number of 32-byte root directory entries
+  /* Compute the maximum number of 32-byte root directory entries */
   *pRootDirEntries = (nLogicalSectorsPerTrack - *pReservedSectors - *pSectorsPerFAT + 1) * nLogicalSectorSize / 32;
   
   nReservedSectors = *pReservedSectors;
@@ -182,93 +182,93 @@ void PrepareBPB()
   nBytesPerCluster = *pSectorsPerCluster * nLogicalSectorSize;
   nTotalDiskCapacity = (unsigned long)(*pTotalSectors) * nLogicalSectorSize;
   
-  // 0xf0 "Superfloppy" media descriptor if /512PH was used
+  /* 0xf0 "Superfloppy" media descriptor if /512PH was used */
   if (nPhysicalSectorSize != nLogicalSectorSize)
   {
     *pMediaDescriptor = 0xf0;
   }
   
-  // Change FAT ID to media descriptor from BPB
+  /* Change FAT ID to media descriptor from BPB */
   sFATSignature[0] = *pMediaDescriptor;
 }
 
 void WriteBootCode()
 {
-  // Write a single 512/1024-byte bootsector, four 128-byte sectors or two 256-byte sectors.
+  /* Write a single 512/1024-byte bootsector, four 128-byte sectors or two 256-byte sectors. */
   unsigned char* pAfterBPB = &(pDMABuffer)[0x36];
     
-  // Prepare the BIOS parameter block (drive geometry)
+  /* Prepare the BIOS parameter block (drive geometry) */
   PrepareBPB();
   
-  // 128B or 256B-per-sector floppy require a special "bootstrapper"
-  // This is pre-signed with 0xaa55 on the 127th and 255th bytes, to be able to be booted from.
+  /* 128B or 256B-per-sector floppy require a special "bootstrapper"
+     This is pre-signed with 0xaa55 on the 127th and 255th bytes, to be able to be booted from. */
   if (nPhysicalSectorSize < 512)
   {
     unsigned char nSectorIdx = 1;
     unsigned int nBytesWritten = 0;
     
-    // Experimental 256byte sector support
+    /* Experimental 256byte sector support */
     if (nPhysicalSectorSize == 256)
     {
-      // Modify the boot code to load one sector to 7d00h
-      // defaultly: load three sectors to 7c80h (3x 128B)
-      s128ByteBootstrapper[33] = 0x01; //was 0x03 (INT 0x13, AH=02 Read Sectors, AL=1 instead of 3)
-      s128ByteBootstrapper[40] = 0x7D; //was 0x7c (Offset to load to: 0x7d00 instead of 0x7c80)
-      s128ByteBootstrapper[39] = 0x00; //was 0x80
+      /* Modify the boot code to load one sector to 7d00h
+         defaultly: load three sectors to 7c80h (3x 128B) */
+      s128ByteBootstrapper[33] = 0x01; /* was 0x03 (INT 0x13, AH=02 Read Sectors, AL=1 instead of 3) */
+      s128ByteBootstrapper[40] = 0x7D; /* was 0x7c (Offset to load to: 0x7d00 instead of 0x7c80) */
+      s128ByteBootstrapper[39] = 0x00; /* was 0x80 */
     }
     
-    // The BIOS only loads one sector CHS 0/0/1 upon boot... So load 3 more sectors (128B size)
-    // or 1 more sector (256B size), to get a complete 512B boot routine.
+    /* The BIOS only loads one sector CHS 0/0/1 upon boot... So load 3 more sectors (128B size)
+       or 1 more sector (256B size), to get a complete 512B boot routine. */
     memcpy(pAfterBPB, s128ByteBootstrapper, nPhysicalSectorSize-sizeof(sBIOSParameterBlock) /* 54 */);
     
-    // On track 0, head 0
+    /* On track 0, head 0 */
     FDDSeek(0, 0);
     
     for(;;)
     {
-      // Complete boot routine
+      /* Complete boot routine */
       int nRemainingBytes;
       
-      // Write one 128B/256B sector
+      /* Write one 128B/256B sector */
       FDDWrite(nSectorIdx++);
       
-      // Length of first part: 54 bytes BPB + the rest of the sector size 
+      /* Length of first part: 54 bytes BPB + the rest of the sector size */
       if (nBytesWritten == 0)
       {
         nBytesWritten += nPhysicalSectorSize-sizeof(sBIOSParameterBlock);
       }
       else
       {
-        nBytesWritten += nPhysicalSectorSize; //128 or 256
+        nBytesWritten += nPhysicalSectorSize; /* 128 or 256 */
       }
       
       nRemainingBytes = sizeof(s128ByteBootstrapper) - nBytesWritten;      
       if (nRemainingBytes <= 0)
       {
-        // Done
+        /* Done */
         break;
       }
       
-      // Next 128/256byte part      
+      /* Next 128/256byte part */
       memcpy(pDMABuffer,
              &(s128ByteBootstrapper)[nBytesWritten],
              (nRemainingBytes > nPhysicalSectorSize) ? nPhysicalSectorSize : nRemainingBytes); 
     }
   }
   
-  // Classic bootsector code (fits a >=512-byte sector)
+  /* Classic bootsector code (fits a >=512-byte sector) */
   else
   {    
-    // Needs to be signed manually at the end of the sector  
+    /* Needs to be signed manually at the end of the sector */
     unsigned int* pSignatureBPB = (unsigned int*)(&(pDMABuffer)[nPhysicalSectorSize-2]);
     
-    // Copy classic bootsector
+    /* Copy classic bootsector */
     memcpy(pAfterBPB, sFAT12BootCode, sizeof(sFAT12BootCode));
     
-    // Bootable sector signature for BIOS
+    /* Bootable sector signature for BIOS */
     *pSignatureBPB = 0xaa55;
     
-    // Write one sector on track 0, head 0, sector no: 1
+    /* Write one sector on track 0, head 0, sector no: 1 */
     FDDSeek(0, 0);
     FDDWrite(1);
   }  
@@ -276,7 +276,7 @@ void WriteBootCode()
 
 void WriteRootDir()
 { 
-  // Start of the FAT region
+  /* Start of the FAT region */
   unsigned char nSectorIdx = (unsigned char)nReservedSectors + 1;
   
   unsigned int nReservedLength = 0;  
@@ -284,10 +284,10 @@ void WriteRootDir()
   unsigned char nHead = 0;
   unsigned char nTrack = 0;
   
-  // Disk write buffer length: 2 FATs + root directory length.
+  /* Disk write buffer length: 2 FATs + root directory length. */
   const unsigned int nBufferLen = (2 * nSectorsPerFAT * nLogicalSectorSize) + (nRootDirEntries * 32);
   
-  // Allocate disk write buffer  
+  /* Allocate disk write buffer */
   unsigned char* pBuffer = (unsigned char*)calloc(nBufferLen, sizeof(unsigned char));
   if (!pBuffer)
   {
@@ -295,8 +295,8 @@ void WriteRootDir()
     Quit(EXIT_FAILURE);
   }
   
-  // Physical sector size not equivalent to logical? This means that 512B physical sectors are forced.
-  // As such, set that the FAT region starts at sector 2 (one bootsector is reserved).
+  /* Physical sector size not equivalent to logical? This means that 512B physical sectors are forced.
+     As such, set that the FAT region starts at sector 2 (one bootsector is reserved). */
   if (nPhysicalSectorSize != nLogicalSectorSize)
   {
     nSectorIdx = 2;
@@ -304,28 +304,28 @@ void WriteRootDir()
   }
   else
   {
-    // Compute bootsector/reserved sectors length in bytes
+    /* Compute bootsector/reserved sectors length in bytes */
     nReservedLength = (unsigned int)nReservedSectors * nLogicalSectorSize;
   }
  
-  // Sign two FATs
+  /* Sign two FATs */
   memcpy(&pBuffer[0], sFATSignature, sizeof(sFATSignature));
   memcpy(&pBuffer[nSectorsPerFAT*nLogicalSectorSize], sFATSignature, sizeof(sFATSignature));
   
-  // Write logical format to disk
+  /* Write logical format to disk */
   while (nBytesWritten < nBufferLen)
   {
-    // Copy memory for the whole sector size, or just the remainder
+    /* Copy memory for the whole sector size, or just the remainder */
     unsigned int nCopyCount = abs(nBytesWritten-nBufferLen);
     if (nCopyCount > nPhysicalSectorSize)
     {
       nCopyCount = nPhysicalSectorSize;
     }
     
-    // DMA buffer filled with format byte (to mark "unwritten" stuff, instead of zeros)
+    /* DMA buffer filled with format byte (to mark "unwritten" stuff, instead of zeros) */
     memset(pDMABuffer, nFormatByte, 1024);
     
-    // Need to advance to the next head (or track) ?
+    /* Need to advance to the next head (or track) ? */
     if (nSectorIdx > nSectorsPerTrack)
     {
       nSectorIdx = 1;
@@ -342,23 +342,23 @@ void WriteRootDir()
       }
     }
     
-    // Copy memory for writing
+    /* Copy memory for writing */
     memcpy(&pDMABuffer[0], &pBuffer[nBytesWritten], nCopyCount);
 
-    // Write FATs/root directory in nPhysicalSectorSize chunks
+    /* Write FATs/root directory in nPhysicalSectorSize chunks */
     FDDWrite(nSectorIdx++);    
     nBytesWritten += nCopyCount;
   }
   
   free(pBuffer);
   
-  // Compute free disk space (total capacity minus reserved length/bootsector(s), FATs and root dir)
+  /* Compute free disk space (total capacity minus reserved length/bootsector(s), FATs and root dir) */
   nTotalDiskSpace = nTotalDiskCapacity - nReservedLength - nBytesWritten;
 }
 
 void DisplayDiskInformation()
 {
-  // FAT information
+  /* FAT information */
   printf("\nUsing a %uB logical sector size on %uB-sectored physical media (ID: 0x%02X)\n"
          "with 2 FATs, a FAT cluster size of %u bytes, %u reserved logical sector(s),\n"
          "%u logical sectors per FAT and %u root directory entries.\n",
@@ -366,22 +366,22 @@ void DisplayDiskInformation()
          nBytesPerCluster, nReservedSectors,
          nSectorsPerFAT, nRootDirEntries);
          
-  // Disk space
+  /* Disk space */
   printf("\n   %7lu bytes (%luK) total disk capacity,\n   %7lu bytes (%luK) usable space.\n\n",
          nTotalDiskCapacity, nTotalDiskCapacity / 1024, nTotalDiskSpace, nTotalDiskSpace / 1024);
 }
 
 void WriteFAT12()
 {     
-  // Clear the 8K DMA buffer
+  /* Clear the 8K DMA buffer */
   memset(pDMABuffer, 0, 8*1024);
   
-  // Write FAT12 bootsector 
+  /* Write FAT12 bootsector */
   WriteBootCode();
 
-  // Write an empty root directory
+  /* Write an empty root directory */
   WriteRootDir();
   
-  // Inform about free space
+  /* Inform about free space */
   DisplayDiskInformation();
 }

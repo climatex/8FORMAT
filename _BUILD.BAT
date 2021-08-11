@@ -1,25 +1,28 @@
 @echo off
 
 REM *** Assumes DOS Turbo C compiler in C:\TC ***
-REM *** Place Turbo Assembler (TASM) into %TC%\BIN if it's not there ***
+REM *** Place Turbo Assembler (TASM) into %TCBIN% if it's not there ***
+REM *** For Turbo C 2.01, set TCBIN=%TC% ***
 
 set TC=C:\TC
+set TCBIN=%TC%\BIN
+set PATH=%TCBIN%;%PATH%
 
 if exist 8format.exe del 8format.exe
 if exist 8tsr.exe del 8tsr.exe
 if exist testread.com del testread.com
 del *.obj >nul
 
-%TC%\BIN\TCC -I%TC%\INCLUDE -c -f- -1- -G -ms -K MAIN.C 8FLOPPY.C 8FORMAT.C ISADMA.C FAT.C
-%TC%\BIN\TLINK /L%TC%\LIB /x /Tde C0FS MAIN.OBJ 8FLOPPY.OBJ 8FORMAT.OBJ ISADMA.OBJ FAT.OBJ,8FORMAT.EXE,,CS
+TCC -I%TC%\INCLUDE -c -f- -1- -G -ms -K MAIN.C 8FLOPPY.C 8FORMAT.C ISADMA.C FAT.C
+TLINK /x %TC%\LIB\C0S.OBJ MAIN.OBJ 8FLOPPY.OBJ 8FORMAT.OBJ ISADMA.OBJ FAT.OBJ,8FORMAT.EXE,,%TC%\LIB\CS.LIB
 
-%TC%\BIN\TCC -I%TC%\INCLUDE -c -f- -1- -G -mt -K TESTREAD.C
-%TC%\BIN\TLINK /L%TC%\LIB /x /Tdc C0FT TESTREAD.OBJ,TESTREAD.COM,,CS
+TCC -I%TC%\INCLUDE -c -f- -1- -G -mt -K TESTREAD.C
+TLINK /x /t %TC%\LIB\C0T.OBJ TESTREAD.OBJ,TESTREAD.COM,,%TC%\LIB\CS.LIB
 
-%TC%\BIN\TASM 8TSR.ASM
-ren 8TSR.OBJ ASM.OBJ
-%TC%\BIN\TCC -I%TC%\INCLUDE -c -f- -1- -G -ms -K 8TSR.C
-%TC%\BIN\TLINK /L%TC%\LIB /x /Tde C0FS 8TSR.OBJ ASM.OBJ,8TSR.EXE,,CS
+TASM 8TSR_A.ASM
+TCC -I%TC%\INCLUDE -c -f- -1- -G -ms -K 8TSR.C
+TLINK /x %TC%\LIB\C0S.OBJ 8TSR.OBJ 8TSR_A.OBJ,8TSR.EXE,,%TC%\LIB\CS.LIB
+
 del *.obj >nul
 del *.dsk >nul
 del *.map >nul

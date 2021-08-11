@@ -1,6 +1,6 @@
-// Read first 4 sectors of track 0 to check 8ISR applied sector size
-// 1KB buffer filler byte 0xCC for unused/unread data
-// Memory model: TINY
+/* Read first 4 sectors of track 0 to check 8ISR applied sector size
+   1KB buffer filler byte 0xCC for unused/unread data
+   Memory model: TINY */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,7 +48,7 @@ void ReadSector(unsigned char nSector)
     return;
   }
   
-  // Filler byte 0xCC for unread data
+  /* Filler byte 0xCC for unread data */
   sprintf(sFileName, "SECTOR%u.BIN", nSector);
   pFile = fopen(sFileName, "wb");
   if (!pFile)
